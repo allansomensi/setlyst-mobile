@@ -1,6 +1,6 @@
 [package]
 name = "setlyst-mobile"
-version = "0.1.0"
+version = "0.1.1"
 description = "Setlyst client for Android"
 authors = ["Allan Somensi <allansomensidev@proton.me>"]
 edition = "2021"
