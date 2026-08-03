@@ -5,6 +5,7 @@ import { Plus, Trash2, Pencil, WifiOff, X } from "lucide-react";
 import { artistsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
 import type { Artist } from "@/types/api";
+import { ActionMenuButton } from "@/components/ui/action-sheet";
 
 export default function ArtistsPage() {
   const { t } = useTranslation();
@@ -12,6 +13,7 @@ export default function ArtistsPage() {
   const [artists, setArtists] = useState<Artist[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingArtist, setEditingArtist] = useState<Artist | null>(null);
+  const [artistToDelete, setArtistToDelete] = useState<Artist | null>(null);
   const [name, setName] = useState("");
 
   const reload = useCallback(async () => {
@@ -59,10 +61,10 @@ export default function ArtistsPage() {
     }
   };
 
-  async function handleDelete(id: string) {
-    if (!session) return;
+  async function confirmDelete() {
+    if (!session || !artistToDelete) return;
     try {
-      await artistsApi.remove(id, session.user_id);
+      await artistsApi.remove(artistToDelete.id, session.user_id);
       await reload();
       toast.success(t("artists.dialog.deletedOffline"));
     } catch (err) {
@@ -71,6 +73,8 @@ export default function ArtistsPage() {
           ? err.message
           : t("artists.dialog.deleteFailed"),
       );
+    } finally {
+      setArtistToDelete(null);
     }
   }
 
@@ -104,20 +108,21 @@ export default function ArtistsPage() {
               )}
             </span>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => openEdit(artist)}
-                aria-label={t("artists.dialog.editTitle")}
-                className="p-1.5"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => handleDelete(artist.id)}
-                aria-label={t("common.delete")}
-                className="p-1.5"
-              >
-                <Trash2 className="text-destructive h-4 w-4" />
-              </button>
+              <ActionMenuButton
+                items={[
+                  {
+                    label: t("common.edit"),
+                    icon: Pencil,
+                    onClick: () => openEdit(artist),
+                  },
+                  {
+                    label: t("common.delete"),
+                    icon: Trash2,
+                    destructive: true,
+                    onClick: () => setArtistToDelete(artist),
+                  },
+                ]}
+              />
             </div>
           </li>
         ))}
@@ -159,6 +164,30 @@ export default function ArtistsPage() {
                 className="bg-primary text-primary-foreground h-9 rounded-lg px-3 text-sm disabled:opacity-50"
               >
                 {t("common.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {artistToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-background w-full max-w-sm space-y-4 rounded-xl p-4">
+            <h2 className="text-lg font-semibold">
+              {t("artists.dialog.deleteConfirm")}
+            </h2>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setArtistToDelete(null)}
+                className="h-9 rounded-lg border px-3 text-sm"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="bg-destructive text-destructive-foreground h-9 rounded-lg px-3 text-sm"
+              >
+                {t("common.delete")}
               </button>
             </div>
           </div>

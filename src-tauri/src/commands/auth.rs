@@ -223,10 +223,7 @@ pub async fn logout(pool: State<'_, Pool>) -> Result<(), crate::error::Serializa
 
 fn inner_logout(pool: &Pool) -> AppResult<()> {
     let conn = pool.get()?;
-    conn.execute(
-        "UPDATE local_session SET api_token = NULL, api_token_exp = NULL WHERE id = 1",
-        params![],
-    )?;
+    conn.execute("DELETE FROM local_session WHERE id = 1", params![])?;
     Ok(())
 }
 

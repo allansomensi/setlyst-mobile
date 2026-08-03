@@ -50,7 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("Failed to persist logout:", err);
     }
-    setSession((s) => (s ? { ...s, api_token: null, api_token_exp: null } : s));
+    const fresh = await authApi.ensureLocalProfile();
+    setSession(fresh);
   }, []);
 
   const isLinked = !!session?.api_token;

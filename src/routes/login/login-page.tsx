@@ -2,7 +2,7 @@ import { useActionState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { LocalApiError } from "@/lib/local-api";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,17 @@ export default function LoginPage() {
 
   return (
     <div className="bg-muted/40 flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm relative">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate(-1)}
+          aria-label={t("common.back", "Back")}
+          className="absolute left-4 top-4"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
             {t("auth.login.title")}

@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
 import {
   Download,
   UploadCloud,
@@ -19,7 +19,6 @@ import type { BackupFile, ImportBackupSummary } from "@/types/api";
 export function BackupSection() {
   const { t } = useTranslation();
   const { session } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -41,7 +40,14 @@ export function BackupSection() {
 
       if (!path) return;
 
-      await writeTextFile(path, JSON.stringify(backup, null, 2));
+      const content = JSON.stringify(backup, null, 2);
+      await writeTextFile(path, content);
+
+      const check = await readTextFile(path);
+      if (!check || check.length === 0) {
+        throw new Error("Write produced an empty file");
+      }
+
       toast.success(t("settings.backupExportSuccess", "Backup exported!"));
     } catch (err) {
       toast.error(
@@ -52,19 +58,28 @@ export function BackupSection() {
     }
   };
 
-  const processFile = async (file: File) => {
+  const handleImport = async () => {
     if (!session) return;
-
-    if (file.type !== "application/json" && !file.name.endsWith(".json")) {
-      toast.error(t("settings.backupInvalidFile", "Invalid backup file."));
-      return;
-    }
 
     setIsImporting(true);
     try {
-      const content = await file.text();
+      const selectedPath = await open({
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (!selectedPath) {
+        setIsImporting(false);
+        return;
+      }
+
+      const path = Array.isArray(selectedPath) ? selectedPath[0] : selectedPath;
+
+      const content = await readTextFile(path);
+
       const backup = JSON.parse(content) as BackupFile;
       const result = await backupApi.import(session.user_id, backup);
+
       setImportResult(result);
       toast.success(t("settings.backupImportSuccess", "Backup imported!"));
     } catch (err) {
@@ -75,13 +90,7 @@ export function BackupSection() {
       );
     } finally {
       setIsImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void processFile(file);
   };
 
   const isBusy = isExporting || isImporting;
@@ -122,20 +131,11 @@ export function BackupSection() {
         </button>
       </div>
 
-      {/* Import (dropzone-style tap target) */}
       <button
-        onClick={() => !isBusy && fileInputRef.current?.click()}
+        onClick={handleImport}
         disabled={isBusy}
         className="border-muted-foreground/25 hover:bg-accent/50 flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center disabled:opacity-60"
       >
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          accept=".json,application/json"
-          className="hidden"
-          disabled={isBusy}
-        />
         <div className="bg-background ring-border rounded-full p-2.5 shadow-sm ring-1">
           {isImporting ? (
             <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />

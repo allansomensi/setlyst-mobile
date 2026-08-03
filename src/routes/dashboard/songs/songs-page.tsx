@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, FileEdit, WifiOff, X } from "lucide-react";
@@ -7,6 +7,7 @@ import { songsApi, artistsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
 import { TONALITIES, GENRES } from "@/types/api";
 import type { Song, Artist } from "@/types/api";
+import { ActionMenuButton } from "@/components/ui/action-sheet";
 
 interface SongFormData {
   title: string;
@@ -18,11 +19,13 @@ interface SongFormData {
 
 export default function SongsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { session } = useAuth();
   const [songs, setSongs] = useState<Song[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
+  const [songToDelete, setSongToDelete] = useState<Song | null>(null);
 
   const reload = useCallback(async () => {
     if (!session) return;
@@ -52,10 +55,10 @@ export default function SongsPage() {
     setIsFormOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!session) return;
+  async function confirmDelete() {
+    if (!session || !songToDelete) return;
     try {
-      await songsApi.remove(id, session.user_id);
+      await songsApi.remove(songToDelete.id, session.user_id);
       await reload();
       toast.success(t("songs.dialog.deletedOffline"));
     } catch (err) {
@@ -64,8 +67,10 @@ export default function SongsPage() {
           ? err.message
           : t("songs.dialog.deleteFailed"),
       );
+    } finally {
+      setSongToDelete(null);
     }
-  };
+  }
 
   const handleSubmit = async (data: SongFormData) => {
     if (!session) return;
@@ -132,7 +137,8 @@ export default function SongsPage() {
         {songs.map((song) => (
           <li
             key={song.id}
-            className="flex items-center justify-between gap-2 p-3"
+            onClick={() => navigate(`/dashboard/songs/${song.id}/live`)}
+            className="flex cursor-pointer items-center justify-between gap-2 p-3 active:bg-muted/50"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -155,30 +161,31 @@ export default function SongsPage() {
                 {song.tempo ? ` · ${song.tempo} BPM` : ""}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                onClick={() => openEdit(song)}
-                aria-label={t("songs.menu.editDetails")}
-                className="p-1.5"
-                title={t("songs.menu.editDetails")}
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <Link
-                to={`/dashboard/songs/${song.id}/lyrics`}
-                aria-label={t("songs.menu.editLyrics")}
-                className="p-1.5"
-                title={t("songs.menu.editLyrics")}
-              >
-                <FileEdit className="h-4 w-4" />
-              </Link>
-              <button
-                onClick={() => handleDelete(song.id)}
-                aria-label={t("common.delete")}
-                className="p-1.5"
-              >
-                <Trash2 className="text-destructive h-4 w-4" />
-              </button>
+            <div
+              className="flex shrink-0 items-center gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ActionMenuButton
+                items={[
+                  {
+                    label: t("songs.menu.editDetails"),
+                    icon: Pencil,
+                    onClick: () => openEdit(song),
+                  },
+                  {
+                    label: t("songs.menu.editLyrics"),
+                    icon: FileEdit,
+                    onClick: () =>
+                      navigate(`/dashboard/songs/${song.id}/lyrics`),
+                  },
+                  {
+                    label: t("songs.menu.delete"),
+                    icon: Trash2,
+                    destructive: true,
+                    onClick: () => setSongToDelete(song),
+                  },
+                ]}
+              />
             </div>
           </li>
         ))}
@@ -191,6 +198,30 @@ export default function SongsPage() {
           onClose={() => setIsFormOpen(false)}
           onSubmit={handleSubmit}
         />
+      )}
+
+      {songToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-background w-full max-w-sm space-y-4 rounded-xl p-4">
+            <h2 className="text-lg font-semibold">
+              {t("songs.dialog.deleteConfirm")}
+            </h2>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setSongToDelete(null)}
+                className="h-9 rounded-lg border px-3 text-sm"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="bg-destructive text-destructive-foreground h-9 rounded-lg px-3 text-sm"
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

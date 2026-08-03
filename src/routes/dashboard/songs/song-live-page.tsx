@@ -1,26 +1,24 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  ChevronLeft,
-  ChevronRight,
   X,
   ZoomIn,
   ZoomOut,
-  Play,
-  Pause,
-  Minus,
-  Plus,
   Settings2,
   Music,
   Type,
   Minimize,
   Maximize,
+  Play,
+  Pause,
+  Minus,
+  Plus,
 } from "lucide-react";
-import { setlistsApi } from "@/lib/local-api";
+import { songsApi } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
 import { ChordProRenderer } from "@/components/chord-pro-renderer";
-import type { Setlist, Song } from "@/types/api";
+import type { Song } from "@/types/api";
 
 type FontFamily = "sans" | "mono" | "serif";
 
@@ -37,9 +35,8 @@ const SCROLL_MIN = 0.1;
 const SCROLL_MAX = 8;
 const SCROLL_STEP = 0.25;
 
-export default function LiveModePage() {
+export default function SongLivePage() {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { session } = useAuth();
   const { t } = useTranslation();
@@ -50,13 +47,10 @@ export default function LiveModePage() {
     serif: t("liveMode.settings.fonts.serif", "Serif"),
   };
 
-  const [setlist, setSetlist] = useState<Setlist | null>(null);
-  const [songs, setSongs] = useState<Song[]>([]);
+  const [song, setSong] = useState<Song | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const [settings, setSettings] = useState<LiveSettings>({
     zoomLevel: 1,
@@ -70,71 +64,14 @@ export default function LiveModePage() {
 
   const load = useCallback(async () => {
     if (!session || !id) return;
-    const [setlistData, setlistSongs] = await Promise.all([
-      setlistsApi.get(id, session.user_id),
-      setlistsApi.getSongs(id),
-    ]);
-    setSetlist(setlistData);
-    setSongs(setlistSongs);
-
-    const initialSongId = searchParams.get("songId");
-    if (initialSongId) {
-      const idx = setlistSongs.findIndex((s) => s.id === initialSongId);
-      setCurrentIndex(Math.max(0, idx));
-    }
+    const songs = await songsApi.list(session.user_id);
+    setSong(songs.find((s) => s.id === id) ?? null);
     setIsLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, id]);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchStartRef.current = { x: t.clientX, y: t.clientY };
-  };
-
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (!start) return;
-
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-
-    const SWIPE_THRESHOLD = 60;
-    if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < 0) handleNext();
-      else handlePrev();
-    }
-  };
-
-  const currentSong = songs[currentIndex];
-  const nextSong = songs[currentIndex + 1];
-  const progress =
-    songs.length > 0 ? ((currentIndex + 1) / songs.length) * 100 : 0;
-
-  const handleNext = useCallback(() => {
-    setCurrentIndex((prev) => {
-      if (prev < songs.length - 1) {
-        setSettings((s) => ({ ...s, isAutoScroll: false }));
-        return prev + 1;
-      }
-      return prev;
-    });
-  }, [songs.length]);
-
-  const handlePrev = useCallback(() => {
-    setCurrentIndex((prev) => {
-      if (prev > 0) {
-        setSettings((s) => ({ ...s, isAutoScroll: false }));
-        return prev - 1;
-      }
-      return prev;
-    });
-  }, []);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -146,12 +83,7 @@ export default function LiveModePage() {
     }
   };
 
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0;
-    }
-  }, [currentIndex]);
-
+  // Auto-scroll logic
   useEffect(() => {
     if (!settings.isAutoScroll) return;
     const interval = setInterval(() => {
@@ -162,7 +94,7 @@ export default function LiveModePage() {
     return () => clearInterval(interval);
   }, [settings.isAutoScroll, settings.scrollSpeed]);
 
-  // Keep the screen awake while on stage, same as the web viewer.
+  // Keep the screen awake
   useEffect(() => {
     let wakeLock: WakeLockSentinel | null = null;
     const requestWakeLock = async () => {
@@ -186,6 +118,7 @@ export default function LiveModePage() {
     };
   }, []);
 
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -195,14 +128,6 @@ export default function LiveModePage() {
         return;
 
       switch (e.key) {
-        case "ArrowRight":
-        case "PageDown":
-          handleNext();
-          break;
-        case "ArrowLeft":
-        case "PageUp":
-          handlePrev();
-          break;
         case " ":
           e.preventDefault();
           setSettings((s) => ({ ...s, isAutoScroll: !s.isAutoScroll }));
@@ -221,45 +146,25 @@ export default function LiveModePage() {
           }));
           break;
         case "Escape":
-          navigate(`/dashboard/setlists/${id}`);
+          navigate(-1);
           break;
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleNext, handlePrev, navigate, id]);
+  }, [navigate]);
 
   const update = <K extends keyof LiveSettings>(
     key: K,
     value: LiveSettings[K],
   ) => setSettings((s) => ({ ...s, [key]: value }));
 
-  if (isLoading || !setlist) {
+  if (isLoading || !song) {
     return (
       <div className="bg-background fixed inset-0 z-50 flex items-center justify-center">
         <span className="text-muted-foreground text-sm">
           {t("common.loading", "Loading...")}
         </span>
-      </div>
-    );
-  }
-
-  if (!currentSong) {
-    return (
-      <div
-        className="bg-background fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-4 text-center"
-        style={{
-          paddingTop: "calc(var(--safe-top) + 1rem)",
-          paddingBottom: "calc(var(--safe-bottom) + 1rem)",
-        }}
-      >
-        <h2 className="text-xl font-semibold">{t("liveMode.noSongs")}</h2>
-        <button
-          onClick={() => navigate(`/dashboard/setlists/${id}`)}
-          className="bg-primary text-primary-foreground flex h-11 items-center justify-center rounded-lg px-5 text-sm font-semibold"
-        >
-          {t("liveMode.back")}
-        </button>
       </div>
     );
   }
@@ -283,7 +188,7 @@ export default function LiveModePage() {
       >
         <div className="flex items-center justify-between gap-2">
           <button
-            onClick={() => navigate(`/dashboard/setlists/${id}`)}
+            onClick={() => navigate(-1)}
             aria-label={t("common.close", "Close")}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg active:bg-muted"
           >
@@ -292,11 +197,8 @@ export default function LiveModePage() {
 
           <div className="min-w-0 flex-1 text-center">
             <h1 className="truncate text-lg leading-tight font-bold">
-              {currentSong.title}
+              {song.title}
             </h1>
-            <p className="text-muted-foreground truncate text-[10px] tracking-wider uppercase">
-              {setlist.title} · {currentIndex + 1}/{songs.length}
-            </p>
           </div>
 
           <button
@@ -315,33 +217,32 @@ export default function LiveModePage() {
           </button>
         </div>
 
-        {(currentSong.tempo || currentSong.tonality) && (
+        {(song.tempo || song.tonality) && (
           <div className="flex items-center justify-center gap-2">
-            {currentSong.tempo && (
+            {song.tempo && (
               <span className="bg-secondary text-secondary-foreground rounded-md px-2.5 py-1 text-xs font-bold tabular-nums">
-                {currentSong.tempo}
-                <span className="ml-1 opacity-70">{t("liveMode.bpm")}</span>
+                {song.tempo}
+                <span className="ml-1 opacity-70">
+                  {t("liveMode.bpm", "BPM")}
+                </span>
               </span>
             )}
-            {currentSong.tonality && (
+            {song.tonality && (
               <span className="bg-primary text-primary-foreground rounded-md px-2.5 py-1 text-xs font-bold">
-                {currentSong.tonality}
+                {song.tonality}
               </span>
             )}
           </div>
         )}
       </header>
 
-      {/* Lyrics */}
       <main
         ref={scrollContainerRef}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
         className="flex-1 overflow-auto scroll-smooth p-4 md:p-12"
       >
         <div className="mx-auto max-w-5xl">
           <ChordProRenderer
-            content={currentSong.lyrics ?? ""}
+            content={song.lyrics ?? ""}
             showChords={settings.showChords}
             fontSize={baseFontSize}
             fontFamily={settings.fontFamily}
@@ -353,7 +254,7 @@ export default function LiveModePage() {
         className={`fixed right-3 z-50 flex flex-col gap-2 transition-all duration-300 ${
           showControls ? "translate-x-0" : "translate-x-[calc(100%-40px)]"
         }`}
-        style={{ bottom: "calc(var(--safe-bottom) + 6rem)" }}
+        style={{ bottom: "calc(var(--safe-bottom) + 1.5rem)" }}
       >
         <div className="bg-card/90 flex items-center gap-1 rounded-xl border p-1 shadow-2xl backdrop-blur-lg">
           <button
@@ -492,50 +393,6 @@ export default function LiveModePage() {
           )}
         </div>
       </div>
-
-      <footer
-        className="bg-card/80 shrink-0 border-t backdrop-blur-md"
-        style={{ paddingBottom: "var(--safe-bottom)" }}
-      >
-        <div className="bg-muted relative h-1.5 w-full overflow-hidden">
-          <div
-            className="bg-primary absolute inset-y-0 left-0 transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="grid grid-cols-3 items-center gap-2 p-3">
-          <div>
-            <button
-              onClick={handlePrev}
-              disabled={currentIndex === 0}
-              className="border-input flex h-12 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-40"
-            >
-              <ChevronLeft className="h-5 w-5" />
-              <span className="hidden sm:inline">{t("liveMode.prev")}</span>
-            </button>
-          </div>
-
-          <div className="overflow-hidden px-1 text-center">
-            <p className="text-muted-foreground text-[9px] font-bold tracking-[0.2em] uppercase">
-              {t("liveMode.nextSong")}
-            </p>
-            <p className="truncate text-sm font-bold">
-              {nextSong ? nextSong.title : t("liveMode.endOfShow")}
-            </p>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={handleNext}
-              disabled={currentIndex === songs.length - 1}
-              className="bg-primary text-primary-foreground flex h-12 items-center gap-1 rounded-lg px-4 text-sm font-bold disabled:opacity-40"
-            >
-              <span className="hidden sm:inline">{t("liveMode.next")}</span>
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

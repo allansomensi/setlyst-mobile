@@ -171,7 +171,10 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={async () => {
+                    await logout();
+                    navigate("/dashboard/artists");
+                  }}
                   className="text-destructive flex h-10 w-full items-center justify-center gap-2 rounded-lg border text-sm font-medium"
                 >
                   <LogOut className="h-4 w-4" />

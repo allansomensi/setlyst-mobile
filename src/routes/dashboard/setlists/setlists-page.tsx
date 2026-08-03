@@ -7,6 +7,7 @@ import { setlistsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
 import { formatDuration } from "@/lib/utils";
 import type { Setlist } from "@/types/api";
+import { ActionMenuButton } from "@/components/ui/action-sheet";
 
 export default function SetlistsPage() {
   const { t } = useTranslation();
@@ -131,26 +132,21 @@ export default function SetlistsPage() {
               <ChevronRight className="text-muted-foreground ml-auto h-4 w-4 shrink-0" />
             </Link>
             <div className="flex shrink-0 items-center gap-1">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  openEdit(setlist);
-                }}
-                aria-label={t("common.edit")}
-                className="p-1.5"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  setSetlistToDelete(setlist.id);
-                }}
-                aria-label={t("common.delete")}
-                className="p-1.5"
-              >
-                <Trash2 className="text-destructive h-4 w-4" />
-              </button>
+              <ActionMenuButton
+                items={[
+                  {
+                    label: t("common.edit"),
+                    icon: Pencil,
+                    onClick: () => openEdit(setlist),
+                  },
+                  {
+                    label: t("common.delete"),
+                    icon: Trash2,
+                    destructive: true,
+                    onClick: () => setSetlistToDelete(setlist.id),
+                  },
+                ]}
+              />
             </div>
           </li>
         ))}
