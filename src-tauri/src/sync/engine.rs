@@ -173,7 +173,10 @@ async fn sync_artists(
     report: &mut SyncReport,
 ) {
     match push_dirty_artists(pool, client, token).await {
-        Ok(pushed) => report.pushed += pushed,
+        Ok((pushed, errs)) => {
+            report.pushed += pushed;
+            report.errors.extend(errs);
+        }
         Err(e) => report.errors.push(format!("push artists: {e}")),
     }
     match pull_artists(pool, client, token).await {
@@ -188,7 +191,11 @@ async fn sync_artists(
 /// Pushes every locally dirty artist: creates/updates via PATCH/POST, and
 /// tombstoned rows via DELETE. On success, clears `dirty` and stamps
 /// `synced_at`; hard-deletes rows whose tombstone was confirmed pushed.
-async fn push_dirty_artists(pool: &Pool, client: &SyncClient, token: &str) -> AppResult<u32> {
+async fn push_dirty_artists(
+    pool: &Pool,
+    client: &SyncClient,
+    token: &str,
+) -> AppResult<(u32, Vec<String>)> {
     let rows: Vec<(String, String, Option<String>, bool)> = {
         let conn = pool.get()?;
         let mut stmt = conn.prepare(
@@ -208,52 +215,64 @@ async fn push_dirty_artists(pool: &Pool, client: &SyncClient, token: &str) -> Ap
     };
 
     let mut pushed = 0;
+    let mut errors = Vec::new();
 
     for (id, name, deleted_at, never_synced) in rows {
-        let uuid = Uuid::parse_str(&id).map_err(|_| AppError::Sync("bad local uuid".into()))?;
-
-        if deleted_at.is_some() {
-            client.push_delete(token, "artists", uuid).await?;
-            let conn = pool.get()?;
-            conn.execute("DELETE FROM artists WHERE id = ?1", params![id])?;
-        } else {
-            #[derive(Serialize)]
-            struct Body<'a> {
-                name: &'a str,
+        let uuid = match Uuid::parse_str(&id) {
+            Ok(u) => u,
+            Err(_) => {
+                errors.push(format!("artist {id}: invalid local uuid"));
+                continue;
             }
+        };
 
-            let remote_id = client
-                .push_created_or_updated(
-                    token,
-                    "artists",
-                    if never_synced { None } else { Some(uuid) },
-                    &Body { name: &name },
-                )
-                .await?;
-
-            let conn = pool.get()?;
-            if never_synced && remote_id != uuid {
-                let new_id = remote_id.to_string();
-                conn.execute(
-                    "UPDATE artists SET id = ?1, dirty = 0, synced_at = ?2 WHERE id = ?3",
-                    params![new_id, Utc::now().naive_utc(), id],
-                )?;
-                conn.execute(
-                    "UPDATE songs SET artist_id = ?1 WHERE artist_id = ?2",
-                    params![new_id, id],
-                )?;
+        let result: AppResult<()> = async {
+            if deleted_at.is_some() {
+                client.push_delete(token, "artists", uuid).await?;
+                let conn = pool.get()?;
+                conn.execute("DELETE FROM artists WHERE id = ?1", params![id])?;
             } else {
-                conn.execute(
-                    "UPDATE artists SET dirty = 0, synced_at = ?1 WHERE id = ?2",
-                    params![Utc::now().naive_utc(), id],
-                )?;
+                #[derive(Serialize)]
+                struct Body<'a> {
+                    name: &'a str,
+                }
+                let remote_id = client
+                    .push_created_or_updated(
+                        token,
+                        "artists",
+                        if never_synced { None } else { Some(uuid) },
+                        &Body { name: &name },
+                    )
+                    .await?;
+                let conn = pool.get()?;
+                if never_synced && remote_id != uuid {
+                    let new_id = remote_id.to_string();
+                    conn.execute(
+                        "UPDATE artists SET id = ?1, dirty = 0, synced_at = ?2 WHERE id = ?3",
+                        params![new_id, Utc::now().naive_utc(), id],
+                    )?;
+                    conn.execute(
+                        "UPDATE songs SET artist_id = ?1 WHERE artist_id = ?2",
+                        params![new_id, id],
+                    )?;
+                } else {
+                    conn.execute(
+                        "UPDATE artists SET dirty = 0, synced_at = ?1 WHERE id = ?2",
+                        params![Utc::now().naive_utc(), id],
+                    )?;
+                }
             }
+            Ok(())
         }
+        .await;
 
-        pushed += 1;
+        match result {
+            Ok(()) => pushed += 1,
+            Err(e) => errors.push(format!("artist {id}: {e}")),
+        }
     }
 
-    Ok(pushed)
+    Ok((pushed, errors))
 }
 
 /// Pulls every remote artist for this user and upserts locally.

@@ -157,10 +157,22 @@ pub async fn delete_artist(
 
 fn inner_delete(pool: &Pool, id: &str, user_id: &str) -> AppResult<()> {
     let conn = pool.get()?;
-    // Soft delete: the row must stay around, marked dirty, until the sync
-    // engine has pushed the deletion to setlyst-api — otherwise a device that
-    // goes offline right after deleting would "resurrect" the artist on the
-    // next pull from another device.
+
+    let has_songs: bool = conn
+        .query_row(
+            "SELECT 1 FROM songs WHERE artist_id = ?1 AND deleted_at IS NULL LIMIT 1",
+            params![id],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+
+    if has_songs {
+        return Err(AppError::Validation(
+            "This artist still has songs linked to it. Remove or reassign them first.".into(),
+        ));
+    }
+
     let updated = conn.execute(
         "UPDATE artists SET deleted_at = ?1, dirty = 1, updated_at = ?1
          WHERE id = ?2 AND user_id = ?3 AND deleted_at IS NULL",

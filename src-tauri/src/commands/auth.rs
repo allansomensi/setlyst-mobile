@@ -8,8 +8,15 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use rusqlite::{params, OptionalExtension};
+use serde::Deserialize;
 use tauri::State;
+
+#[derive(Deserialize)]
+struct JwtExpOnly {
+    exp: i64,
+}
 
 /// Logs in. If `payload.online` is true, authenticates against `setlyst-api`
 /// (same as `setlyst-web`'s `/auth/login`) and refreshes the local cache. If
@@ -50,6 +57,27 @@ async fn inner_login(
                 for table in ["artists", "songs", "setlists"] {
                     conn.execute(
                         &format!("UPDATE {table} SET user_id = ?1, dirty = 1 WHERE user_id = ?2"),
+                        params![user.id.to_string(), old_id],
+                    )?;
+                }
+
+                let account_has_prefs: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM user_preferences WHERE user_id = ?1",
+                        params![user.id.to_string()],
+                        |_| Ok(true),
+                    )
+                    .optional()?
+                    .unwrap_or(false);
+
+                if account_has_prefs {
+                    conn.execute(
+                        "DELETE FROM user_preferences WHERE user_id = ?1",
+                        params![old_id],
+                    )?;
+                } else {
+                    conn.execute(
+                        "UPDATE user_preferences SET user_id = ?1, dirty = 1 WHERE user_id = ?2",
                         params![user.id.to_string(), old_id],
                     )?;
                 }
@@ -227,9 +255,11 @@ fn inner_logout(pool: &Pool) -> AppResult<()> {
     Ok(())
 }
 
-fn token_exp(_jwt: &str) -> i64 {
-    // Decoding is delegated to the sync client right before it's actually
-    // needed (see sync/client.rs); here we just need "some" timestamp so the
-    // UI can show token freshness. Kept simple on purpose for this scaffold.
-    chrono::Utc::now().timestamp() + 86_400
+fn token_exp(jwt: &str) -> i64 {
+    let mut validation = Validation::new(Algorithm::HS256);
+
+    validation.validate_exp = false;
+    decode::<JwtExpOnly>(jwt, &DecodingKey::from_secret(&[]), &validation)
+        .map(|data| data.claims.exp)
+        .unwrap_or_else(|_| chrono::Utc::now().timestamp() + 86_400)
 }
