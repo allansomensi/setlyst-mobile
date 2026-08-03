@@ -86,6 +86,9 @@ export default function RegisterPage() {
               required
               disabled={isPending}
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="border-input h-10 w-full rounded-lg border px-3 text-sm"
             />
           </div>
@@ -98,6 +101,9 @@ export default function RegisterPage() {
               placeholder={t("auth.register.email")}
               disabled={isPending}
               autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="border-input h-10 w-full rounded-lg border px-3 text-sm"
             />
           </div>

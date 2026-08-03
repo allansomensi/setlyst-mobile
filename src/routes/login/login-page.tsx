@@ -83,6 +83,10 @@ export default function LoginPage() {
                 required
                 disabled={isPending}
                 tabIndex={1}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="username"
               />
             </div>
 
