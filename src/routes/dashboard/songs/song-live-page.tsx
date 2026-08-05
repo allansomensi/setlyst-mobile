@@ -206,7 +206,7 @@ export default function SongLivePage() {
           <button
             onClick={() => navigate(-1)}
             aria-label={t("common.close", "Close")}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg active:bg-muted"
+            className="active:bg-muted flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
           >
             <X className="h-5 w-5" />
           </button>
@@ -223,7 +223,7 @@ export default function SongLivePage() {
               "liveMode.settings.toggleFullscreen",
               "Toggle fullscreen",
             )}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg active:bg-muted"
+            className="active:bg-muted flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
           >
             {isFullscreen ? (
               <Minimize className="h-5 w-5" />

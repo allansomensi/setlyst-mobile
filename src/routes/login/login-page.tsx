@@ -54,14 +54,14 @@ export default function LoginPage() {
 
   return (
     <div className="bg-muted/40 flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm relative">
+      <Card className="relative w-full max-w-sm">
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={() => navigate(-1)}
           aria-label={t("common.back", "Back")}
-          className="absolute left-4 top-4"
+          className="absolute top-4 left-4"
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -113,7 +113,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="text-center text-sm font-medium text-destructive">
+              <p className="text-destructive text-center text-sm font-medium">
                 {error}
               </p>
             )}

@@ -1,0 +1,10 @@
+{
+  "material-icon-theme.folders.associations": {
+    "dashboard": "home",
+    "login": "secure",
+    "register": "secure",
+    "artists": "resource",
+    "setlists": "resource",
+    "songs": "resource"
+  }
+}

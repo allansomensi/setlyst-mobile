@@ -22,7 +22,7 @@ export function ActionMenuButton({ items }: { items: ActionSheetItem[] }) {
           setOpen(true);
         }}
         aria-label={t("common.actions", "Actions")}
-        className="p-2 -m-2 rounded-lg active:bg-muted"
+        className="active:bg-muted -m-2 rounded-lg p-2"
       >
         <MoreVertical className="h-4 w-4" />
       </button>
@@ -41,7 +41,7 @@ export function ActionMenuButton({ items }: { items: ActionSheetItem[] }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
                 {t("common.actions", "Actions")}
               </span>
               <button
@@ -60,7 +60,7 @@ export function ActionMenuButton({ items }: { items: ActionSheetItem[] }) {
                     setOpen(false);
                     item.onClick();
                   }}
-                  className={`flex h-12 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium active:bg-muted ${
+                  className={`active:bg-muted flex h-12 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium ${
                     item.destructive ? "text-destructive" : ""
                   }`}
                 >

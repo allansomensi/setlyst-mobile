@@ -57,22 +57,22 @@ export default function RegisterPage() {
 
   return (
     <div className="flex h-full min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm relative">
+      <div className="relative w-full max-w-sm">
         <Button
           type="button"
           variant="ghost"
           size="icon"
           onClick={() => navigate(-1)}
           aria-label={t("common.back", "Back")}
-          className="absolute -left-2 -top-2"
+          className="absolute -top-2 -left-2"
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
 
         <form action={registerAction} className="w-full space-y-4 pt-10">
-          <div className="text-center space-y-1.5 mb-6">
+          <div className="mb-6 space-y-1.5 text-center">
             <h1 className="text-2xl font-bold">{t("auth.register.title")}</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               {t("auth.register.subtitle")}
             </p>
           </div>
@@ -149,7 +149,7 @@ export default function RegisterPage() {
           {error && (
             <p
               role="alert"
-              className="text-center text-sm font-medium text-destructive"
+              className="text-destructive text-center text-sm font-medium"
             >
               {error}
             </p>

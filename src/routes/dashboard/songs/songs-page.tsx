@@ -138,7 +138,7 @@ export default function SongsPage() {
           <li
             key={song.id}
             onClick={() => navigate(`/dashboard/songs/${song.id}/live`)}
-            className="flex cursor-pointer items-center justify-between gap-2 p-3 active:bg-muted/50"
+            className="active:bg-muted/50 flex cursor-pointer items-center justify-between gap-2 p-3"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
