@@ -162,26 +162,27 @@ export default function LiveModePage() {
     return () => clearInterval(interval);
   }, [settings.isAutoScroll, settings.scrollSpeed]);
 
-  // Keep the screen awake while on stage, same as the web viewer.
+  // Keep the screen awake while on stage.
   useEffect(() => {
     let wakeLock: WakeLockSentinel | null = null;
     const requestWakeLock = async () => {
       try {
         if ("wakeLock" in navigator) {
-          wakeLock = await (
-            navigator as Navigator & {
-              wakeLock: {
-                request: (type: "screen") => Promise<WakeLockSentinel>;
-              };
-            }
-          ).wakeLock.request("screen");
+          wakeLock = await navigator.wakeLock.request("screen");
         }
       } catch (err) {
         console.error("Wake Lock failed:", err);
       }
     };
     requestWakeLock();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
       wakeLock?.release();
     };
   }, []);
@@ -350,12 +351,12 @@ export default function LiveModePage() {
       </main>
 
       <div
-        className={`fixed right-3 z-50 flex flex-col gap-2 transition-all duration-300 ${
+        className={`fixed right-3 z-50 max-w-[calc(100vw-1.5rem)] transition-all duration-300 ${
           showControls ? "translate-x-0" : "translate-x-[calc(100%-40px)]"
         }`}
         style={{ bottom: "calc(var(--safe-bottom) + 6rem)" }}
       >
-        <div className="bg-card/90 flex items-center gap-1 rounded-xl border p-1 shadow-2xl backdrop-blur-lg">
+        <div className="bg-card/90 flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-xl border p-1.5 shadow-2xl backdrop-blur-lg">
           <button
             onClick={() => setShowControls((v) => !v)}
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
@@ -370,7 +371,7 @@ export default function LiveModePage() {
           </button>
 
           {showControls && (
-            <div className="flex items-center gap-1.5 border-l pl-1">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 border-l pl-1.5">
               <div className="bg-background/50 flex items-center rounded-lg border">
                 <button
                   className="flex h-10 w-10 items-center justify-center"

@@ -238,9 +238,18 @@ function SectionLabel({
 }) {
   if (variant === "pill") {
     return (
-      <div className="my-5 flex items-center">
-        <div className="border-border bg-muted/10 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-bold tracking-widest uppercase shadow-sm">
-          {Icon && <Icon className="h-4 w-4 opacity-80" strokeWidth={2.5} />}
+      <div className="my-5 flex items-center" style={{ fontSize: "0.65em" }}>
+        <div
+          className="border-border bg-muted/10 text-muted-foreground inline-flex items-center gap-2 rounded-full border font-bold tracking-widest uppercase shadow-sm"
+          style={{ padding: "0.4em 1em" }}
+        >
+          {Icon && (
+            <Icon
+              className="opacity-80"
+              style={{ width: "1.15em", height: "1.15em" }}
+              strokeWidth={2.5}
+            />
+          )}
           <span>{children}</span>
         </div>
       </div>
@@ -248,8 +257,13 @@ function SectionLabel({
   }
 
   return (
-    <div className="border-border/50 text-muted-foreground mt-8 mb-3 flex items-center gap-2 border-b pb-1 text-xs font-bold tracking-widest uppercase">
-      {Icon && <Icon className="h-4 w-4" strokeWidth={2.5} />}
+    <div
+      className="border-border/50 text-muted-foreground mt-8 mb-3 flex items-center gap-2 border-b pb-1 font-bold tracking-widest uppercase"
+      style={{ fontSize: "0.65em" }}
+    >
+      {Icon && (
+        <Icon style={{ width: "1.15em", height: "1.15em" }} strokeWidth={2.5} />
+      )}
       <span>{children}</span>
     </div>
   );

@@ -15,7 +15,7 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { songsApi } from "@/lib/local-api";
+import { preferencesApi, songsApi } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
 import { ChordProRenderer } from "@/components/chord-pro-renderer";
 import type { Song } from "@/types/api";
@@ -64,8 +64,15 @@ export default function SongLivePage() {
 
   const load = useCallback(async () => {
     if (!session || !id) return;
-    const songs = await songsApi.list(session.user_id);
+    const [songs, prefs] = await Promise.all([
+      songsApi.list(session.user_id),
+      preferencesApi.get(session.user_id),
+    ]);
     setSong(songs.find((s) => s.id === id) ?? null);
+    setSettings((s) => ({
+      ...s,
+      zoomLevel: (prefs.live_mode_font_size ?? 100) / 100,
+    }));
     setIsLoading(false);
   }, [session, id]);
 
@@ -82,6 +89,14 @@ export default function SongLivePage() {
       setIsFullscreen(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+  }, []);
 
   // Auto-scroll logic
   useEffect(() => {
@@ -100,20 +115,21 @@ export default function SongLivePage() {
     const requestWakeLock = async () => {
       try {
         if ("wakeLock" in navigator) {
-          wakeLock = await (
-            navigator as Navigator & {
-              wakeLock: {
-                request: (type: "screen") => Promise<WakeLockSentinel>;
-              };
-            }
-          ).wakeLock.request("screen");
+          wakeLock = await navigator.wakeLock.request("screen");
         }
       } catch (err) {
         console.error("Wake Lock failed:", err);
       }
     };
     requestWakeLock();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
       wakeLock?.release();
     };
   }, []);
@@ -251,12 +267,12 @@ export default function SongLivePage() {
       </main>
 
       <div
-        className={`fixed right-3 z-50 flex flex-col gap-2 transition-all duration-300 ${
+        className={`fixed right-3 z-50 max-w-[calc(100vw-1.5rem)] transition-all duration-300 ${
           showControls ? "translate-x-0" : "translate-x-[calc(100%-40px)]"
         }`}
-        style={{ bottom: "calc(var(--safe-bottom) + 1.5rem)" }}
+        style={{ bottom: "calc(var(--safe-bottom) + 6rem)" }}
       >
-        <div className="bg-card/90 flex items-center gap-1 rounded-xl border p-1 shadow-2xl backdrop-blur-lg">
+        <div className="bg-card/90 flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-xl border p-1.5 shadow-2xl backdrop-blur-lg">
           <button
             onClick={() => setShowControls((v) => !v)}
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
@@ -271,7 +287,7 @@ export default function SongLivePage() {
           </button>
 
           {showControls && (
-            <div className="flex items-center gap-1.5 border-l pl-1">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 border-l pl-1.5">
               <div className="bg-background/50 flex items-center rounded-lg border">
                 <button
                   className="flex h-10 w-10 items-center justify-center"
