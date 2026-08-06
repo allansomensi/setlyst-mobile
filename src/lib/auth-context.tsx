@@ -46,12 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await authApi.logout();
+      const fresh = await authApi.logout();
+      setSession(fresh);
     } catch (err) {
       console.error("Failed to persist logout:", err);
     }
-    const fresh = await authApi.ensureLocalProfile();
-    setSession(fresh);
   }, []);
 
   const isLinked = !!session?.api_token;

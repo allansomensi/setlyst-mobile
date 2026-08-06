@@ -23,6 +23,14 @@ pub struct RemoteUser {
 }
 
 #[derive(Serialize)]
+pub struct UpdateProfileBody {
+    pub username: Option<String>,
+    pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+}
+
+#[derive(Serialize)]
 struct LoginPayload<'a> {
     username: &'a str,
     password: &'a str,
@@ -314,5 +322,42 @@ impl SyncClient {
             .error_for_status()
             .map_err(|e| AppError::Sync(e.to_string()))?;
         self.get_preferences(token).await
+    }
+
+    pub async fn change_password(
+        &self,
+        token: &str,
+        current_password: &str,
+        new_password: &str,
+    ) -> AppResult<()> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            current_password: &'a str,
+            new_password: &'a str,
+        }
+        self.http
+            .patch(format!("{}/users/me/password", self.base_url))
+            .bearer_auth(token)
+            .json(&Body {
+                current_password,
+                new_password,
+            })
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(|e| AppError::Sync(e.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn update_profile(&self, token: &str, payload: &UpdateProfileBody) -> AppResult<()> {
+        self.http
+            .patch(format!("{}/users/me", self.base_url))
+            .bearer_auth(token)
+            .json(payload)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(|e| AppError::Sync(e.to_string()))?;
+        Ok(())
     }
 }

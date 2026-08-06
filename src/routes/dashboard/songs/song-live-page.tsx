@@ -19,6 +19,7 @@ import { preferencesApi, songsApi } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
 import { ChordProRenderer } from "@/components/chord-pro-renderer";
 import type { Song } from "@/types/api";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type FontFamily = "sans" | "mono" | "serif";
 
@@ -80,21 +81,22 @@ export default function SongLivePage() {
     load();
   }, [load]);
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
+  const toggleFullscreen = async () => {
+    try {
+      const win = getCurrentWindow();
+      const fs = await win.isFullscreen();
+      await win.setFullscreen(!fs);
+      setIsFullscreen(!fs);
+    } catch (err) {
+      console.error("Fullscreen not supported on this platform:", err);
     }
   };
 
   useEffect(() => {
     return () => {
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      }
+      getCurrentWindow()
+        .setFullscreen(false)
+        .catch(() => {});
     };
   }, []);
 

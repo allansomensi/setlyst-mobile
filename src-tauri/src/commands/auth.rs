@@ -44,6 +44,7 @@ async fn inner_login(
         let (token, user) = client.login(&payload.username, &payload.password).await?;
 
         let conn = pool.get()?;
+
         let old_user_id: Option<String> = conn
             .query_row(
                 "SELECT user_id FROM local_session WHERE id = 1",
@@ -54,33 +55,7 @@ async fn inner_login(
 
         if let Some(old_id) = old_user_id {
             if old_id != user.id.to_string() {
-                for table in ["artists", "songs", "setlists"] {
-                    conn.execute(
-                        &format!("UPDATE {table} SET user_id = ?1, dirty = 1 WHERE user_id = ?2"),
-                        params![user.id.to_string(), old_id],
-                    )?;
-                }
-
-                let account_has_prefs: bool = conn
-                    .query_row(
-                        "SELECT 1 FROM user_preferences WHERE user_id = ?1",
-                        params![user.id.to_string()],
-                        |_| Ok(true),
-                    )
-                    .optional()?
-                    .unwrap_or(false);
-
-                if account_has_prefs {
-                    conn.execute(
-                        "DELETE FROM user_preferences WHERE user_id = ?1",
-                        params![old_id],
-                    )?;
-                } else {
-                    conn.execute(
-                        "UPDATE user_preferences SET user_id = ?1, dirty = 1 WHERE user_id = ?2",
-                        params![user.id.to_string(), old_id],
-                    )?;
-                }
+                merge_guest_data_into_account(&conn, &old_id, &user.id.to_string())?;
             }
         }
 
@@ -245,14 +220,20 @@ fn inner_get_or_create(pool: &Pool) -> AppResult<LocalSession> {
 }
 
 #[tauri::command]
-pub async fn logout(pool: State<'_, Pool>) -> Result<(), crate::error::SerializableError> {
+pub async fn logout(
+    pool: State<'_, Pool>,
+) -> Result<LocalSession, crate::error::SerializableError> {
     inner_logout(&pool).map_err(Into::into)
 }
 
-fn inner_logout(pool: &Pool) -> AppResult<()> {
+fn inner_logout(pool: &Pool) -> AppResult<LocalSession> {
     let conn = pool.get()?;
-    conn.execute("DELETE FROM local_session WHERE id = 1", params![])?;
-    Ok(())
+    conn.execute(
+        "UPDATE local_session SET username = 'Guest', email = NULL, first_name = NULL,
+            last_name = NULL, api_token = NULL, api_token_exp = NULL WHERE id = 1",
+        params![],
+    )?;
+    read_session_row(&conn)?.ok_or(AppError::NoOfflineSession)
 }
 
 fn token_exp(jwt: &str) -> i64 {
@@ -262,4 +243,144 @@ fn token_exp(jwt: &str) -> i64 {
     decode::<JwtExpOnly>(jwt, &DecodingKey::from_secret(&[]), &validation)
         .map(|data| data.claims.exp)
         .unwrap_or_else(|_| chrono::Utc::now().timestamp() + 86_400)
+}
+
+fn merge_guest_data_into_account(
+    conn: &rusqlite::Connection,
+    guest_user_id: &str,
+    account_user_id: &str,
+) -> AppResult<()> {
+    use std::collections::HashMap;
+
+    let mut artist_id_map: HashMap<String, String> = HashMap::new();
+    {
+        let mut stmt =
+            conn.prepare("SELECT id, name FROM artists WHERE user_id = ?1 AND deleted_at IS NULL")?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map(params![guest_user_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        for (guest_id, name) in rows {
+            let existing: Option<String> = conn.query_row(
+                "SELECT id FROM artists WHERE name = ?1 AND user_id = ?2 AND deleted_at IS NULL",
+                params![name, account_user_id], |r| r.get(0),
+            ).optional()?;
+            match existing {
+                Some(acc_id) => {
+                    conn.execute("DELETE FROM artists WHERE id = ?1", params![guest_id])?;
+                    artist_id_map.insert(guest_id, acc_id);
+                }
+                None => {
+                    conn.execute(
+                        "UPDATE artists SET user_id = ?1, dirty = 1 WHERE id = ?2",
+                        params![account_user_id, guest_id],
+                    )?;
+                    artist_id_map.insert(guest_id.clone(), guest_id);
+                }
+            }
+        }
+    }
+
+    let mut song_id_map: HashMap<String, String> = HashMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT id, title, artist_id FROM songs WHERE user_id = ?1 AND deleted_at IS NULL",
+        )?;
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map(params![guest_user_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        for (guest_id, title, old_artist_id) in rows {
+            let resolved_artist_id = artist_id_map
+                .get(&old_artist_id)
+                .cloned()
+                .unwrap_or(old_artist_id);
+            let existing: Option<String> = conn.query_row(
+                "SELECT id FROM songs WHERE title = ?1 AND artist_id = ?2 AND user_id = ?3 AND deleted_at IS NULL",
+                params![title, resolved_artist_id, account_user_id], |r| r.get(0),
+            ).optional()?;
+            match existing {
+                Some(acc_id) => {
+                    conn.execute("DELETE FROM songs WHERE id = ?1", params![guest_id])?;
+                    song_id_map.insert(guest_id, acc_id);
+                }
+                None => {
+                    conn.execute(
+                        "UPDATE songs SET user_id = ?1, artist_id = ?2, dirty = 1 WHERE id = ?3",
+                        params![account_user_id, resolved_artist_id, guest_id],
+                    )?;
+                    song_id_map.insert(guest_id.clone(), guest_id);
+                }
+            }
+        }
+    }
+
+    {
+        let mut stmt = conn
+            .prepare("SELECT id, title FROM setlists WHERE user_id = ?1 AND deleted_at IS NULL")?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map(params![guest_user_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        for (guest_id, title) in rows {
+            let existing: Option<String> = conn.query_row(
+                "SELECT id FROM setlists WHERE title = ?1 AND user_id = ?2 AND deleted_at IS NULL",
+                params![title, account_user_id], |r| r.get(0),
+            ).optional()?;
+            let resolved_setlist_id = match existing {
+                Some(acc_id) => {
+                    conn.execute("DELETE FROM setlists WHERE id = ?1", params![guest_id])?;
+                    acc_id
+                }
+                None => {
+                    conn.execute(
+                        "UPDATE setlists SET user_id = ?1, dirty = 1 WHERE id = ?2",
+                        params![account_user_id, guest_id],
+                    )?;
+                    guest_id.clone()
+                }
+            };
+
+            let mut ss_stmt = conn.prepare("SELECT song_id, position FROM setlist_songs WHERE setlist_id = ?1 AND deleted_at IS NULL")?;
+            let links: Vec<(String, i32)> = ss_stmt
+                .query_map(params![guest_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            for (song_id, position) in links {
+                let resolved_song_id = song_id_map.get(&song_id).cloned().unwrap_or(song_id);
+                conn.execute(
+                    "INSERT INTO setlist_songs (setlist_id, song_id, position, dirty, deleted_at, synced_at)
+                     VALUES (?1, ?2, ?3, 1, NULL, NULL)
+                     ON CONFLICT(setlist_id, song_id) DO UPDATE SET position = excluded.position, dirty = 1, deleted_at = NULL",
+                    params![resolved_setlist_id, resolved_song_id, position],
+                )?;
+            }
+            if resolved_setlist_id != guest_id {
+                conn.execute(
+                    "DELETE FROM setlist_songs WHERE setlist_id = ?1",
+                    params![guest_id],
+                )?;
+            }
+        }
+    }
+
+    let account_has_prefs: bool = conn
+        .query_row(
+            "SELECT 1 FROM user_preferences WHERE user_id = ?1",
+            params![account_user_id],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+
+    if account_has_prefs {
+        conn.execute(
+            "DELETE FROM user_preferences WHERE user_id = ?1",
+            params![guest_user_id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE user_preferences SET user_id = ?1, dirty = 1 WHERE user_id = ?2",
+            params![account_user_id, guest_user_id],
+        )?;
+    }
+    Ok(())
 }

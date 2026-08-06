@@ -17,6 +17,7 @@ import type {
   BackupFile,
   ImportBackupSummary,
 } from "@/types/api";
+import { API_BASE_URL } from "./auth-context";
 
 export class LocalApiError extends Error {
   code: string;
@@ -92,7 +93,7 @@ export const authApi = {
       apiBaseUrl,
       payload: { username, password, online },
     }),
-  logout: () => call<void>("logout"),
+  logout: () => call<LocalSession>("logout"),
 };
 
 export const syncApi = {
@@ -111,4 +112,19 @@ export const backupApi = {
   export: (userId: string) => call<BackupFile>("export_backup", { userId }),
   import: (userId: string, backup: BackupFile) =>
     call<ImportBackupSummary>("import_backup", { userId, backup }),
+};
+
+export const profileApi = {
+  update: (payload: {
+    username?: string;
+    email?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+  }) => call<LocalSession>("update_profile", { payload }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    call<void>("change_password", {
+      apiBaseUrl: API_BASE_URL,
+      currentPassword,
+      newPassword,
+    }),
 };

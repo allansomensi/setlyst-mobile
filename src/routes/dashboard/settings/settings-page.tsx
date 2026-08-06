@@ -135,7 +135,7 @@ export default function SettingsPage() {
 
       <SectionCard title={t("settings.account.title", "Account")} icon={User}>
         <button
-          onClick={() => setShowAccount((v) => !v)}
+          onClick={() => navigate("/dashboard/settings/account")}
           className="flex w-full items-center justify-between py-1 text-left"
         >
           <div className="min-w-0">
@@ -149,58 +149,8 @@ export default function SettingsPage() {
                 : t("settings.account.notLinked", "Not linked")}
             </p>
           </div>
-          <ChevronRight
-            className={`text-muted-foreground h-4 w-4 shrink-0 transition-transform ${
-              showAccount ? "rotate-90" : ""
-            }`}
-          />
+          <ChevronRight className="text-muted-foreground h-4 w-4 shrink-0" />
         </button>
-
-        {showAccount && (
-          <div className="animate-in fade-in slide-in-from-top-1 border-t pt-3">
-            {isLinked && session ? (
-              <div className="space-y-3">
-                <div className="text-muted-foreground space-y-1 text-sm">
-                  {(session.first_name || session.last_name) && (
-                    <p>
-                      {session.first_name} {session.last_name}
-                    </p>
-                  )}
-                  <p className="capitalize">
-                    {session.role ? t(`users.roles.${session.role}`) : ""}
-                  </p>
-                </div>
-                <button
-                  onClick={async () => {
-                    await logout();
-                    navigate("/dashboard/artists");
-                  }}
-                  className="text-destructive flex h-10 w-full items-center justify-center gap-2 rounded-lg border text-sm font-medium"
-                >
-                  <LogOut className="h-4 w-4" />
-                  {t("nav.logout")}
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => navigate("/login")}
-                  className="bg-primary text-primary-foreground flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-medium"
-                >
-                  <LogIn className="h-4 w-4" />
-                  {t("auth.login.submit")}
-                </button>
-                <button
-                  onClick={() => navigate("/register")}
-                  className="flex h-10 items-center justify-center gap-2 rounded-lg border text-sm font-medium"
-                >
-                  <UserPlus className="h-4 w-4" />
-                  {t("auth.register.submit")}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </SectionCard>
 
       <SectionCard title={t("settings.theme")} icon={Sun}>

@@ -40,6 +40,8 @@ pub fn run() {
             commands::setlist::reorder_setlist_songs,
             commands::preferences::get_preferences,
             commands::preferences::update_preferences,
+            commands::profile::update_profile,
+            commands::profile::change_password,
             commands::backup::export_backup,
             commands::backup::import_backup,
             commands::auth::login,

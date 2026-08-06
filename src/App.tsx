@@ -12,6 +12,7 @@ import LiveModePage from "./routes/dashboard/setlists/live/live-mode-page";
 import LyricsEditorPage from "./routes/dashboard/songs/lyrics-editor-page";
 import RegisterPage from "./routes/register/register-page";
 import SongLivePage from "./routes/dashboard/songs/song-live-page";
+import AccountPage from "./routes/dashboard/settings/account-page";
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="setlists" element={<SetlistsPage />} />
             <Route path="setlists/:id" element={<SetlistDetailPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/account" element={<AccountPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

@@ -45,6 +45,7 @@ pub async fn run_full_sync(
     sync_songs(pool, &client, token, user_id, &mut report).await;
     sync_setlists(pool, &client, token, user_id, &mut report).await;
     sync_preferences(pool, &client, token, &mut report).await;
+    sync_profile(pool, &client, token, &mut report).await;
 
     let conn = pool.get()?;
     conn.execute(
@@ -295,6 +296,27 @@ async fn pull_artists(pool: &Pool, client: &SyncClient, token: &str) -> AppResul
             )
             .ok();
 
+        if local.is_none() {
+            let clashing_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM artists WHERE name = ?1 AND user_id = ?2 AND deleted_at IS NULL AND id != ?3",
+                    params![artist.name, artist.user_id.to_string(), artist.id.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+
+            if let Some(old_id) = clashing_id {
+                conn.execute(
+                    "UPDATE artists SET id = ?1 WHERE id = ?2",
+                    params![artist.id.to_string(), old_id],
+                )?;
+                conn.execute(
+                    "UPDATE songs SET artist_id = ?1 WHERE artist_id = ?2",
+                    params![artist.id.to_string(), old_id],
+                )?;
+            }
+        }
+
         let should_overwrite = match local {
             None => true,
             Some((dirty, local_updated_at)) => {
@@ -486,6 +508,32 @@ async fn pull_songs(pool: &Pool, client: &SyncClient, token: &str) -> AppResult<
             )
             .ok();
 
+        if local.is_none() {
+            let clashing_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM songs WHERE title = ?1 AND artist_id = ?2 AND user_id = ?3 AND deleted_at IS NULL AND id != ?4",
+                    params![
+                        song.title,
+                        song.artist_id.to_string(),
+                        song.user_id.to_string(),
+                        song.id.to_string()
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()?;
+
+            if let Some(old_id) = clashing_id {
+                conn.execute(
+                    "UPDATE songs SET id = ?1 WHERE id = ?2",
+                    params![song.id.to_string(), old_id],
+                )?;
+                conn.execute(
+                    "UPDATE setlist_songs SET song_id = ?1 WHERE song_id = ?2",
+                    params![song.id.to_string(), old_id],
+                )?;
+            }
+        }
+
         let should_overwrite = match local {
             None => true,
             Some((dirty, local_updated_at)) => {
@@ -653,6 +701,25 @@ async fn pull_setlists(pool: &Pool, client: &SyncClient, token: &str) -> AppResu
             )
             .ok();
 
+        if local.is_none() {
+            let clashing_id: Option<String> = conn.query_row(
+        "SELECT id FROM setlists WHERE title = ?1 AND user_id = ?2 AND deleted_at IS NULL AND id != ?3",
+        params![setlist.title, setlist.user_id.to_string(), setlist.id.to_string()],
+        |row| row.get(0),
+    ).optional()?;
+
+            if let Some(old_id) = clashing_id {
+                conn.execute(
+                    "UPDATE setlists SET id = ?1 WHERE id = ?2",
+                    params![setlist.id.to_string(), old_id],
+                )?;
+                conn.execute(
+                    "UPDATE setlist_songs SET setlist_id = ?1 WHERE setlist_id = ?2",
+                    params![setlist.id.to_string(), old_id],
+                )?;
+            }
+        }
+
         let should_overwrite = match local {
             None => true,
             Some((dirty, local_updated_at)) => {
@@ -776,4 +843,45 @@ async fn sync_setlist_songs(pool: &Pool, client: &SyncClient, token: &str) -> Ap
     }
 
     Ok(pushed)
+}
+
+async fn sync_profile(pool: &Pool, client: &SyncClient, token: &str, report: &mut SyncReport) {
+    if let Err(e) = push_profile_if_dirty(pool, client, token).await {
+        report.errors.push(format!("sync profile: {e}"));
+    }
+}
+
+async fn push_profile_if_dirty(pool: &Pool, client: &SyncClient, token: &str) -> AppResult<()> {
+    let row: Option<(bool, String, Option<String>, Option<String>, Option<String>)> = {
+        let conn = pool.get()?;
+        conn.query_row(
+            "SELECT profile_dirty, username, email, first_name, last_name FROM local_session WHERE id = 1",
+            params![], |r| Ok((r.get::<_, i64>(0)? == 1, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        ).optional()?
+    };
+    let Some((dirty, username, email, first_name, last_name)) = row else {
+        return Ok(());
+    };
+    if !dirty {
+        return Ok(());
+    }
+
+    client
+        .update_profile(
+            token,
+            &crate::sync::client::UpdateProfileBody {
+                username: Some(username),
+                email,
+                first_name,
+                last_name,
+            },
+        )
+        .await?;
+
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE local_session SET profile_dirty = 0 WHERE id = 1",
+        params![],
+    )?;
+    Ok(())
 }

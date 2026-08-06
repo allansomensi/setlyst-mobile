@@ -29,6 +29,10 @@ pub fn init_pool(app_handle: &tauri::AppHandle) -> Result<Pool, Box<dyn std::err
         "ALTER TABLE user_preferences ADD COLUMN updated_at TIMESTAMP",
         [],
     );
+    let _ = conn.execute(
+        "ALTER TABLE local_session ADD COLUMN profile_dirty INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
 
     Ok(pool)
 }
