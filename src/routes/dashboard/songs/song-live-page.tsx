@@ -15,9 +15,11 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { preferencesApi, songsApi } from "@/lib/local-api";
+import { songsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
+import { usePreferences } from "@/lib/use-preferences";
 import { ChordProRenderer } from "@/components/chord-pro-renderer";
+import { ErrorView } from "@/components/ui/state-views";
 import type { Song } from "@/types/api";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -49,37 +51,60 @@ export default function SongLivePage() {
   };
 
   const [song, setSong] = useState<Song | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSong, setIsLoadingSong] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
+
+  const {
+    preferences,
+    isLoading: isLoadingPrefs,
+    reload: reloadPrefs,
+  } = usePreferences(session?.user_id);
 
   const [settings, setSettings] = useState<LiveSettings>({
     zoomLevel: 1,
     fontFamily: "sans",
-    showChords: true,
+    showChords: false,
     isAutoScroll: false,
     scrollSpeed: 1,
   });
 
+  useEffect(() => {
+    if (preferences) {
+      setSettings((s) => ({
+        ...s,
+        zoomLevel: (preferences.live_mode_font_size ?? 100) / 100,
+      }));
+    }
+  }, [preferences]);
+
   const scrollContainerRef = useRef<HTMLElement>(null);
 
-  const load = useCallback(async () => {
+  const loadSong = useCallback(async () => {
     if (!session || !id) return;
-    const [songs, prefs] = await Promise.all([
-      songsApi.list(session.user_id),
-      preferencesApi.get(session.user_id),
-    ]);
-    setSong(songs.find((s) => s.id === id) ?? null);
-    setSettings((s) => ({
-      ...s,
-      zoomLevel: (prefs.live_mode_font_size ?? 100) / 100,
-    }));
-    setIsLoading(false);
-  }, [session, id]);
+    setIsLoadingSong(true);
+    try {
+      const songs = await songsApi.list(session.user_id);
+      const found = songs.find((s) => s.id === id) ?? null;
+      if (!found) {
+        setLoadError(t("songs.errors.invalidId", "Song not found."));
+      } else {
+        setSong(found);
+        setLoadError(null);
+      }
+    } catch (err) {
+      setLoadError(
+        err instanceof LocalApiError ? err.message : "Failed to load song.",
+      );
+    } finally {
+      setIsLoadingSong(false);
+    }
+  }, [session, id, t]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadSong();
+  }, [loadSong]);
 
   const toggleFullscreen = async () => {
     try {
@@ -100,7 +125,6 @@ export default function SongLivePage() {
     };
   }, []);
 
-  // Auto-scroll logic
   useEffect(() => {
     if (!settings.isAutoScroll) return;
     const interval = setInterval(() => {
@@ -111,7 +135,6 @@ export default function SongLivePage() {
     return () => clearInterval(interval);
   }, [settings.isAutoScroll, settings.scrollSpeed]);
 
-  // Keep the screen awake
   useEffect(() => {
     let wakeLock: WakeLockSentinel | null = null;
     const requestWakeLock = async () => {
@@ -136,7 +159,6 @@ export default function SongLivePage() {
     };
   }, []);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -177,12 +199,28 @@ export default function SongLivePage() {
     value: LiveSettings[K],
   ) => setSettings((s) => ({ ...s, [key]: value }));
 
-  if (isLoading || !song) {
+  const isLoading = isLoadingSong || isLoadingPrefs;
+
+  if (isLoading) {
     return (
       <div className="bg-background fixed inset-0 z-50 flex items-center justify-center">
         <span className="text-muted-foreground text-sm">
           {t("common.loading", "Loading...")}
         </span>
+      </div>
+    );
+  }
+
+  if (loadError || !song) {
+    return (
+      <div className="bg-background fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-4">
+        <ErrorView
+          message={loadError ?? "Song not found."}
+          onRetry={loadSong}
+        />
+        <button onClick={() => navigate(-1)} className="text-sm underline">
+          {t("common.back", "Back")}
+        </button>
       </div>
     );
   }
@@ -342,6 +380,7 @@ export default function SongLivePage() {
                   settings.showChords ? "bg-secondary" : ""
                 }`}
                 aria-label={t("liveMode.settings.showChords", "Toggle chords")}
+                title={t("liveMode.settings.showChords", "Toggle chords")}
               >
                 <Music className="h-3.5 w-3.5" />
               </button>

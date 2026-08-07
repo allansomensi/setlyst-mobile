@@ -34,7 +34,7 @@ export default function LyricsEditorPage() {
   const [songTitle, setSongTitle] = useState("");
   const [lyrics, setLyrics] = useState("");
   const [showPreview, setShowPreview] = useState(true);
-  const [showChords, setShowChords] = useState(true);
+  const [showChords, setShowChords] = useState(false);
 
   useEffect(() => {
     let mounted = true;

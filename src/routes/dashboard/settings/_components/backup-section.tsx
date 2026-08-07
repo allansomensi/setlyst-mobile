@@ -78,6 +78,63 @@ export function BackupSection() {
       const content = await readTextFile(path);
 
       const backup = JSON.parse(content) as BackupFile;
+      const [pendingImport, setPendingImport] = useState<BackupFile | null>(
+        null,
+      );
+
+      setPendingImport(backup);
+      setIsImporting(false);
+
+      {
+        pendingImport && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-background w-full max-w-sm space-y-4 rounded-xl p-4">
+              <h2 className="text-lg font-semibold">Import backup?</h2>
+              <p className="text-muted-foreground text-sm">
+                This will add {pendingImport.artists.length} artists,{" "}
+                {pendingImport.songs.length} songs, and{" "}
+                {pendingImport.setlists.length} setlists to your current
+                repertoire. Existing items with the same name are reused, not
+                duplicated — nothing will be overwritten.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setPendingImport(null)}
+                  className="h-9 rounded-lg border px-3 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!session) return;
+                    setIsImporting(true);
+                    try {
+                      const result = await backupApi.import(
+                        session.user_id,
+                        pendingImport,
+                      );
+                      setImportResult(result);
+                      toast.success(t("settings.backupImportSuccess"));
+                    } catch (err) {
+                      toast.error(
+                        err instanceof LocalApiError
+                          ? err.message
+                          : t("settings.backupInvalidFile"),
+                      );
+                    } finally {
+                      setIsImporting(false);
+                      setPendingImport(null);
+                    }
+                  }}
+                  className="bg-primary text-primary-foreground h-9 rounded-lg px-3 text-sm"
+                >
+                  Import
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
       const result = await backupApi.import(session.user_id, backup);
 
       setImportResult(result);

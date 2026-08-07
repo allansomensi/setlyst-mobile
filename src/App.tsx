@@ -1,6 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { AuthProvider } from "@/lib/auth-context";
 import LoginPage from "@/routes/login/login-page";
 import DashboardLayout from "@/routes/dashboard/dashboard-layout";
 import ArtistsPage from "@/routes/dashboard/artists/artists-page";

@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import packageJson from "../../../../package.json";
 import { BackupSection } from "./_components/backup-section";
 import { PreferencesConflict } from "@/types/api";
+import { usePreferences } from "@/lib/use-preferences";
 
 type ThemeOption = "light" | "dark" | "system";
 
@@ -61,16 +62,19 @@ export default function SettingsPage() {
   const { t, i18n } = useTranslation();
   const { session, isLinked, logout } = useAuth();
   const { theme, setTheme } = useTheme();
-
   const { status, report, error, runSync } = useSync();
   const navigate = useNavigate();
 
-  const [showAccount, setShowAccount] = useState(false);
-  const [fontSize, setFontSize] = useState(100);
-  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
-
   const [conflict, setConflict] = useState<PreferencesConflict | null>(null);
   const clearConflict = () => setConflict(null);
+
+  const {
+    preferences,
+    error: prefsError,
+    update: updatePreferences,
+  } = usePreferences(session?.user_id);
+
+  const fontSize = preferences?.live_mode_font_size ?? 100;
 
   useEffect(() => {
     if (report?.preferences_conflict) {
@@ -79,37 +83,27 @@ export default function SettingsPage() {
   }, [report]);
 
   useEffect(() => {
-    if (!session) return;
-    preferencesApi
-      .get(session.user_id)
-      .then((prefs) => {
-        setFontSize(prefs.live_mode_font_size);
-        if (prefs.theme !== theme) setTheme(prefs.theme as ThemeOption);
-        if (prefs.language && prefs.language !== i18n.language) {
-          i18n.changeLanguage(prefs.language);
-        }
-      })
-      .catch(() => {});
+    if (!preferences) return;
+    if (preferences.theme !== theme) setTheme(preferences.theme as ThemeOption);
+    if (preferences.language && preferences.language !== i18n.language) {
+      i18n.changeLanguage(preferences.language);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [preferences]);
 
   const persist = async (payload: {
     language?: string;
     theme?: ThemeOption;
     live_mode_font_size?: number;
   }) => {
-    if (!session) return;
-    setIsSavingPrefs(true);
     try {
-      await preferencesApi.update(session.user_id, payload);
+      await updatePreferences(payload);
     } catch (err) {
       toast.error(
         err instanceof LocalApiError
           ? err.message
           : t("settings.saveFailed", "Failed to save preferences"),
       );
-    } finally {
-      setIsSavingPrefs(false);
     }
   };
 
@@ -125,7 +119,6 @@ export default function SettingsPage() {
 
   const adjustFontSize = (delta: number) => {
     const next = Math.min(300, Math.max(50, fontSize + delta));
-    setFontSize(next);
     void persist({ live_mode_font_size: next });
   };
 
@@ -140,13 +133,13 @@ export default function SettingsPage() {
         >
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">
-              {session?.username ?? t("common.guest", "Guest")}
+              {isLinked ? session?.username : t("common.guest", "Guest")}
             </p>
             <p className="text-muted-foreground text-xs">
               {isLinked
                 ? session?.email ||
                   t("settings.account.linked", "Linked account")
-                : t("settings.account.notLinked", "Not linked")}
+                : t("settings.account.notLinked", "Tap to sign in")}
             </p>
           </div>
           <ChevronRight className="text-muted-foreground h-4 w-4 shrink-0" />
@@ -210,6 +203,12 @@ export default function SettingsPage() {
           ))}
         </div>
       </SectionCard>
+
+      {prefsError && (
+        <p className="text-destructive text-xs">
+          {t("settings.saveFailed", prefsError)}
+        </p>
+      )}
 
       {/* Live Mode */}
       <SectionCard title={t("settings.liveModeFontSize")} icon={Type}>
@@ -302,12 +301,6 @@ export default function SettingsPage() {
           <span className="font-mono">v{packageJson.version}</span>
         </div>
       </SectionCard>
-
-      {isSavingPrefs && (
-        <p className="text-muted-foreground text-center text-xs">
-          {t("common.saving", "Saving...")}
-        </p>
-      )}
 
       {conflict && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

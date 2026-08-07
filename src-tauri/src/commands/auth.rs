@@ -43,24 +43,27 @@ async fn inner_login(
         let client = SyncClient::new(api_base_url.to_string());
         let (token, user) = client.login(&payload.username, &payload.password).await?;
 
-        let conn = pool.get()?;
-
-        let old_user_id: Option<String> = conn
+        let mut conn = pool.get()?;
+        let previous: Option<(String, Option<String>)> = conn
             .query_row(
-                "SELECT user_id FROM local_session WHERE id = 1",
+                "SELECT user_id, api_token FROM local_session WHERE id = 1",
                 params![],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
 
-        if let Some(old_id) = old_user_id {
-            if old_id != user.id.to_string() {
-                merge_guest_data_into_account(&conn, &old_id, &user.id.to_string())?;
+        if let Some((old_id, old_token)) = previous {
+            let is_unlinked_guest = old_token.is_none();
+            let is_different_account = old_id != user.id.to_string();
+
+            if is_unlinked_guest && is_different_account {
+                let tx = conn.transaction()?;
+                merge_guest_data_into_account(&tx, &old_id, &user.id.to_string())?;
+                tx.commit()?;
             }
         }
+        drop(conn);
 
-        // Cache a fresh argon2 hash of the password so future logins can work
-        // fully offline. We never store or transmit the plaintext password.
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(payload.password.as_bytes(), &salt)
@@ -110,6 +113,9 @@ async fn inner_login(
         let session = cached.ok_or(AppError::NoOfflineSession)?;
         let parsed_hash =
             PasswordHash::new(&session.password_hash).map_err(|_| AppError::InvalidCredentials)?;
+
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
         Argon2::default()
             .verify_password(payload.password.as_bytes(), &parsed_hash)
             .map_err(|_| AppError::InvalidCredentials)?;

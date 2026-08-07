@@ -17,9 +17,11 @@ import {
   Minimize,
   Maximize,
 } from "lucide-react";
-import { setlistsApi } from "@/lib/local-api";
+import { setlistsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
+import { usePreferences } from "@/lib/use-preferences";
 import { ChordProRenderer } from "@/components/chord-pro-renderer";
+import { ErrorView } from "@/components/ui/state-views";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Setlist, Song } from "@/types/api";
 
@@ -53,37 +55,62 @@ export default function LiveModePage() {
 
   const [setlist, setSetlist] = useState<Setlist | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSetlist, setIsLoadingSetlist] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  const { preferences, isLoading: isLoadingPrefs } = usePreferences(
+    session?.user_id,
+  );
+
   const [settings, setSettings] = useState<LiveSettings>({
     zoomLevel: 1,
     fontFamily: "sans",
-    showChords: true,
+    showChords: false,
     isAutoScroll: false,
     scrollSpeed: 1,
   });
+
+  useEffect(() => {
+    if (preferences) {
+      setSettings((s) => ({
+        ...s,
+        zoomLevel: (preferences.live_mode_font_size ?? 100) / 100,
+      }));
+    }
+  }, [preferences]);
 
   const scrollContainerRef = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     if (!session || !id) return;
-    const [setlistData, setlistSongs] = await Promise.all([
-      setlistsApi.get(id, session.user_id),
-      setlistsApi.getSongs(id),
-    ]);
-    setSetlist(setlistData);
-    setSongs(setlistSongs);
+    setIsLoadingSetlist(true);
+    try {
+      const [setlistData, setlistSongs] = await Promise.all([
+        setlistsApi.get(id, session.user_id),
+        setlistsApi.getSongs(id),
+      ]);
+      setSetlist(setlistData);
+      setSongs(setlistSongs);
+      setLoadError(null);
 
-    const initialSongId = searchParams.get("songId");
-    if (initialSongId) {
-      const idx = setlistSongs.findIndex((s) => s.id === initialSongId);
-      setCurrentIndex(Math.max(0, idx));
+      const initialSongId = searchParams.get("songId");
+      if (initialSongId) {
+        const idx = setlistSongs.findIndex((s) => s.id === initialSongId);
+        setCurrentIndex(Math.max(0, idx));
+      }
+    } catch (err) {
+      setLoadError(
+        err instanceof LocalApiError
+          ? err.message
+          : "Failed to load this setlist.",
+      );
+    } finally {
+      setIsLoadingSetlist(false);
     }
-    setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, id]);
 
@@ -147,6 +174,14 @@ export default function LiveModePage() {
       console.error("Fullscreen not supported on this platform:", err);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      getCurrentWindow()
+        .setFullscreen(false)
+        .catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     if (scrollContainerRef.current) {
@@ -237,12 +272,34 @@ export default function LiveModePage() {
     value: LiveSettings[K],
   ) => setSettings((s) => ({ ...s, [key]: value }));
 
-  if (isLoading || !setlist) {
+  const isLoading = isLoadingSetlist || isLoadingPrefs;
+
+  if (isLoading) {
     return (
       <div className="bg-background fixed inset-0 z-50 flex items-center justify-center">
         <span className="text-muted-foreground text-sm">
           {t("common.loading", "Loading...")}
         </span>
+      </div>
+    );
+  }
+
+  if (loadError || !setlist) {
+    return (
+      <div
+        className="bg-background fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 p-4 text-center"
+        style={{
+          paddingTop: "calc(var(--safe-top) + 1rem)",
+          paddingBottom: "calc(var(--safe-bottom) + 1rem)",
+        }}
+      >
+        <ErrorView message={loadError ?? "Setlist not found."} onRetry={load} />
+        <button
+          onClick={() => navigate("/dashboard/setlists")}
+          className="text-sm underline"
+        >
+          {t("liveMode.back")}
+        </button>
       </div>
     );
   }
@@ -426,6 +483,7 @@ export default function LiveModePage() {
                   settings.showChords ? "bg-secondary" : ""
                 }`}
                 aria-label={t("liveMode.settings.showChords", "Toggle chords")}
+                title={t("liveMode.settings.showChords", "Toggle chords")}
               >
                 <Music className="h-3.5 w-3.5" />
               </button>

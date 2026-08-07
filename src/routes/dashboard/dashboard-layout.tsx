@@ -1,9 +1,11 @@
 import { Outlet, NavLink } from "react-router-dom";
-import { Disc3, ListMusic, Music, Settings } from "lucide-react";
+import { Disc3, ListMusic, Music, Settings, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useOnline } from "@/lib/use-online";
 
 export default function DashboardLayout() {
   const { t } = useTranslation();
+  const online = useOnline();
 
   const NAV_ITEMS = [
     { to: "/dashboard/artists", icon: Disc3, label: t("nav.artists") },
@@ -18,6 +20,15 @@ export default function DashboardLayout() {
         className="flex-1 overflow-y-auto px-4"
         style={{ paddingTop: "calc(var(--safe-top) + 0.75rem)" }}
       >
+        {!online && (
+          <div
+            className="mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+            role="status"
+          >
+            <WifiOff className="h-3.5 w-3.5" />
+            {t("common.offline", "Offline — changes will sync later")}
+          </div>
+        )}
         <Outlet />
       </main>
 

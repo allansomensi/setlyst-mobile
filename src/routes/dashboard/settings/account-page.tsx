@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, LogOut, Save, KeyRound, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  LogOut,
+  Save,
+  KeyRound,
+  Loader2,
+  LogIn,
+  UserPlus,
+  UserCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { profileApi, LocalApiError } from "@/lib/local-api";
@@ -21,6 +30,9 @@ export default function AccountPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+  const inputClass =
+    "border-input mt-1 h-10 w-full rounded-lg border px-3 text-sm";
 
   const saveProfile = async () => {
     setIsSavingProfile(true);
@@ -87,35 +99,69 @@ export default function AccountPage() {
     navigate("/dashboard/artists");
   };
 
-  const inputClass =
-    "border-input mt-1 h-10 w-full rounded-lg border px-3 text-sm";
+  const Header = (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={() => navigate(-1)}
+        className="rounded-lg border p-2"
+        aria-label={t("common.back", "Back")}
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </button>
+      <h1 className="text-2xl font-bold">
+        {t("settings.account.title", "Account")}
+      </h1>
+    </div>
+  );
+
+  if (!isLinked) {
+    return (
+      <div className="space-y-6 pb-8">
+        {Header}
+
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed p-8 text-center">
+          <div className="bg-muted flex h-16 w-16 items-center justify-center rounded-full">
+            <UserCircle2 className="text-muted-foreground h-8 w-8" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">
+              {t(
+                "settings.account.guestTitle",
+                "You're using Setlyst as a guest",
+              )}
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t(
+                "settings.account.guestDescription",
+                "Everything you create stays on this device. Sign in to back it up and sync across devices.",
+              )}
+            </p>
+          </div>
+
+          <div className="flex w-full flex-col gap-2 pt-2">
+            <button
+              onClick={() => navigate("/login")}
+              className="bg-primary text-primary-foreground flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold"
+            >
+              <LogIn className="h-4 w-4" />
+              {t("auth.login.submit", "Sign in")}
+            </button>
+            <button
+              onClick={() => navigate("/register")}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border text-sm font-semibold"
+            >
+              <UserPlus className="h-4 w-4" />
+              {t("auth.register.submit", "Create account")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-8">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => navigate(-1)}
-          className="rounded-lg border p-2"
-          aria-label={t("common.back", "Back")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <h1 className="text-2xl font-bold">
-          {t("settings.account.title", "Account")}
-        </h1>
-      </div>
-
-      {!isLinked && (
-        <p className="text-muted-foreground rounded-lg border border-dashed p-3 text-sm">
-          {t("settings.account.notLinked", "Not linked")} —{" "}
-          <button
-            className="text-primary underline"
-            onClick={() => navigate("/login")}
-          >
-            {t("auth.login.submit")}
-          </button>
-        </p>
-      )}
+      {Header}
 
       <section className="space-y-3 rounded-xl border p-4">
         <h2 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">

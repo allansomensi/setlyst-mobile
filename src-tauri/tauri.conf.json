@@ -19,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: https:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 https://setlyst-api.onrender.com"
+      "csp": "default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 https://setlyst-api.onrender.com; frame-ancestors 'none'; object-src 'none'"
     }
   },
   "bundle": {

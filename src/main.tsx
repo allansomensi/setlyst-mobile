@@ -4,6 +4,7 @@ import App from "./App";
 import "./i18n";
 import "./index.css";
 import { ThemeProvider } from "@/lib/theme-provider";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

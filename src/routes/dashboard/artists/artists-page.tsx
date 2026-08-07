@@ -1,30 +1,32 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, WifiOff, X } from "lucide-react";
 import { artistsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
+import { useAsyncData } from "@/lib/use-async-data";
+import { LoadingView, ErrorView } from "@/components/ui/state-views";
 import type { Artist } from "@/types/api";
 import { ActionMenuButton } from "@/components/ui/action-sheet";
 
 export default function ArtistsPage() {
   const { t } = useTranslation();
-  const { session } = useAuth();
-  const [artists, setArtists] = useState<Artist[]>([]);
+  const { session, isLoading: authLoading } = useAuth();
+
+  const {
+    data: artists,
+    status,
+    error,
+    reload,
+  } = useAsyncData<Artist[]>(
+    session ? () => artistsApi.list(session.user_id) : null,
+    [session?.user_id],
+  );
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingArtist, setEditingArtist] = useState<Artist | null>(null);
   const [artistToDelete, setArtistToDelete] = useState<Artist | null>(null);
   const [name, setName] = useState("");
-
-  const reload = useCallback(async () => {
-    if (!session) return;
-    const data = await artistsApi.list(session.user_id);
-    setArtists(data);
-  }, [session]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
 
   const openCreate = () => {
     setEditingArtist(null);
@@ -61,7 +63,7 @@ export default function ArtistsPage() {
     }
   };
 
-  async function confirmDelete() {
+  const confirmDelete = async () => {
     if (!session || !artistToDelete) return;
     try {
       await artistsApi.remove(artistToDelete.id, session.user_id);
@@ -76,7 +78,9 @@ export default function ArtistsPage() {
     } finally {
       setArtistToDelete(null);
     }
-  }
+  };
+
+  const list = artists ?? [];
 
   return (
     <div className="space-y-4">
@@ -90,43 +94,52 @@ export default function ArtistsPage() {
         </button>
       </div>
 
-      <ul className="divide-y rounded-lg border">
-        {artists.length === 0 && (
-          <li className="text-muted-foreground p-4 text-center text-sm">
-            {t("artists.emptyOffline")}
-          </li>
-        )}
-        {artists.map((artist) => (
-          <li key={artist.id} className="flex items-center justify-between p-3">
-            <span className="flex items-center gap-2">
-              {artist.name}
-              {artist.dirty && (
-                <WifiOff
-                  className="text-muted-foreground h-3.5 w-3.5"
-                  aria-label={t("common.notSynced")}
+      {authLoading || status === "loading" ? (
+        <LoadingView />
+      ) : status === "error" ? (
+        <ErrorView message={error ?? ""} onRetry={reload} />
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {list.length === 0 && (
+            <li className="text-muted-foreground p-4 text-center text-sm">
+              {t("artists.emptyOffline")}
+            </li>
+          )}
+          {list.map((artist) => (
+            <li
+              key={artist.id}
+              className="flex items-center justify-between p-3"
+            >
+              <span className="flex items-center gap-2">
+                {artist.name}
+                {artist.dirty && (
+                  <WifiOff
+                    className="text-muted-foreground h-3.5 w-3.5"
+                    aria-label={t("common.notSynced")}
+                  />
+                )}
+              </span>
+              <div className="flex items-center gap-1">
+                <ActionMenuButton
+                  items={[
+                    {
+                      label: t("common.edit"),
+                      icon: Pencil,
+                      onClick: () => openEdit(artist),
+                    },
+                    {
+                      label: t("common.delete"),
+                      icon: Trash2,
+                      destructive: true,
+                      onClick: () => setArtistToDelete(artist),
+                    },
+                  ]}
                 />
-              )}
-            </span>
-            <div className="flex items-center gap-1">
-              <ActionMenuButton
-                items={[
-                  {
-                    label: t("common.edit"),
-                    icon: Pencil,
-                    onClick: () => openEdit(artist),
-                  },
-                  {
-                    label: t("common.delete"),
-                    icon: Trash2,
-                    destructive: true,
-                    onClick: () => setArtistToDelete(artist),
-                  },
-                ]}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {isFormOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
