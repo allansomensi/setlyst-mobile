@@ -16,6 +16,7 @@ import {
   Type,
   Minimize,
   Maximize,
+  Check,
 } from "lucide-react";
 import { setlistsApi, LocalApiError } from "@/lib/local-api";
 import { useAuth } from "@/lib/auth-context";
@@ -23,6 +24,7 @@ import { usePreferences } from "@/lib/use-preferences";
 import { ChordProRenderer } from "@/components/chord-pro-renderer";
 import { ErrorView } from "@/components/ui/state-views";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { cn } from "@/lib/utils";
 import type { Setlist, Song } from "@/types/api";
 
 type FontFamily = "sans" | "mono" | "serif";
@@ -39,6 +41,9 @@ const SCROLL_INTERVAL_MS = 50;
 const SCROLL_MIN = 0.1;
 const SCROLL_MAX = 8;
 const SCROLL_STEP = 0.25;
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 3;
+const ZOOM_STEP = 0.1;
 
 export default function LiveModePage() {
   const { id } = useParams<{ id: string }>();
@@ -58,9 +63,13 @@ export default function LiveModePage() {
   const [isLoadingSetlist, setIsLoadingSetlist] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showControls, setShowControls] = useState(false);
+  const [isChromeVisible, setIsChromeVisible] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showSongList, setShowSongList] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(
+    null,
+  );
 
   const { preferences, isLoading: isLoadingPrefs } = usePreferences(
     session?.user_id,
@@ -118,27 +127,6 @@ export default function LiveModePage() {
     load();
   }, [load]);
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchStartRef.current = { x: t.clientX, y: t.clientY };
-  };
-
-  const onTouchEnd = (e: React.TouchEvent) => {
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (!start) return;
-
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-
-    const SWIPE_THRESHOLD = 60;
-    if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < 0) handleNext();
-      else handlePrev();
-    }
-  };
-
   const currentSong = songs[currentIndex];
   const nextSong = songs[currentIndex + 1];
   const progress =
@@ -163,6 +151,49 @@ export default function LiveModePage() {
       return prev;
     });
   }, []);
+
+  const jumpTo = useCallback((index: number) => {
+    setCurrentIndex(index);
+    setSettings((s) => ({ ...s, isAutoScroll: false }));
+    setShowSongList(false);
+  }, []);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now(),
+    };
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    const dt = Date.now() - start.time;
+
+    const SWIPE_THRESHOLD = 60;
+    const TAP_THRESHOLD = 12;
+
+    if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) handleNext();
+      else handlePrev();
+      return;
+    }
+
+    if (
+      Math.abs(dx) < TAP_THRESHOLD &&
+      Math.abs(dy) < TAP_THRESHOLD &&
+      dt < 400
+    ) {
+      setIsChromeVisible((v) => !v);
+    }
+  };
 
   const toggleFullscreen = async () => {
     try {
@@ -199,7 +230,6 @@ export default function LiveModePage() {
     return () => clearInterval(interval);
   }, [settings.isAutoScroll, settings.scrollSpeed]);
 
-  // Keep the screen awake while on stage.
   useEffect(() => {
     let wakeLock: WakeLockSentinel | null = null;
     const requestWakeLock = async () => {
@@ -259,13 +289,15 @@ export default function LiveModePage() {
           }));
           break;
         case "Escape":
-          navigate(`/dashboard/setlists/${id}`);
+          if (showSettings) setShowSettings(false);
+          else if (showSongList) setShowSongList(false);
+          else navigate(`/dashboard/setlists/${id}`);
           break;
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleNext, handlePrev, navigate, id]);
+  }, [handleNext, handlePrev, navigate, id, showSettings, showSongList]);
 
   const update = <K extends keyof LiveSettings>(
     key: K,
@@ -324,7 +356,7 @@ export default function LiveModePage() {
     );
   }
 
-  const baseFontSize = 1.5 * settings.zoomLevel;
+  const baseFontSize = 1.55 * settings.zoomLevel;
 
   return (
     <div
@@ -334,70 +366,83 @@ export default function LiveModePage() {
         paddingRight: "var(--safe-right)",
       }}
     >
-      <header
-        className="bg-card/50 flex shrink-0 flex-col gap-2 border-b px-3 backdrop-blur-md"
-        style={{
-          paddingTop: "calc(var(--safe-top) + 0.625rem)",
-          paddingBottom: "0.625rem",
-        }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <button
-            onClick={() => navigate(`/dashboard/setlists/${id}`)}
-            aria-label={t("common.close", "Close")}
-            className="active:bg-muted flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
-          >
-            <X className="h-5 w-5" />
-          </button>
+      {isChromeVisible && (
+        <header
+          className="bg-card/95 supports-backdrop-filter:bg-card/85 z-30 flex shrink-0 flex-col gap-2 border-b backdrop-blur-md"
+          style={{
+            paddingTop: "calc(var(--safe-top) + 0.5rem)",
+            paddingBottom: "0.5rem",
+          }}
+        >
+          <div className="flex items-center gap-2 px-3">
+            <button
+              onClick={() => navigate(`/dashboard/setlists/${id}`)}
+              aria-label={t("common.close", "Close")}
+              className="active:bg-muted flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+            >
+              <X className="h-5 w-5" />
+            </button>
 
-          <div className="min-w-0 flex-1 text-center">
-            <h1 className="truncate text-lg leading-tight font-bold">
-              {currentSong.title}
-            </h1>
-            <p className="text-muted-foreground truncate text-[10px] tracking-wider uppercase">
-              {setlist.title} · {currentIndex + 1}/{songs.length}
-            </p>
+            <button
+              onClick={() => setShowSongList(true)}
+              aria-label={t("setlists.songs.title")}
+              className="active:bg-muted min-w-0 flex-1 rounded-lg px-1 py-0.5 text-center"
+            >
+              <h1 className="truncate text-base leading-tight font-bold">
+                {currentSong.title}
+              </h1>
+              <p className="text-muted-foreground truncate text-[11px] font-medium tracking-wide">
+                {setlist.title} · {currentIndex + 1}/{songs.length}
+              </p>
+            </button>
+
+            <button
+              onClick={toggleFullscreen}
+              aria-label={t(
+                "liveMode.settings.toggleFullscreen",
+                "Toggle fullscreen",
+              )}
+              className="active:bg-muted flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+            >
+              {isFullscreen ? (
+                <Minimize className="h-5 w-5" />
+              ) : (
+                <Maximize className="h-5 w-5" />
+              )}
+            </button>
           </div>
 
-          <button
-            onClick={toggleFullscreen}
-            aria-label={t(
-              "liveMode.settings.toggleFullscreen",
-              "Toggle fullscreen",
-            )}
-            className="active:bg-muted flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
-          >
-            {isFullscreen ? (
-              <Minimize className="h-5 w-5" />
-            ) : (
-              <Maximize className="h-5 w-5" />
-            )}
-          </button>
-        </div>
+          {(currentSong.tempo ||
+            currentSong.tonality ||
+            settings.isAutoScroll) && (
+            <div className="flex items-center justify-center gap-2 px-3">
+              {currentSong.tempo && (
+                <span className="bg-secondary text-secondary-foreground rounded-full px-2.5 py-1 text-xs font-bold tabular-nums">
+                  {currentSong.tempo}{" "}
+                  <span className="opacity-70">{t("liveMode.bpm")}</span>
+                </span>
+              )}
+              {currentSong.tonality && (
+                <span className="bg-primary text-primary-foreground rounded-full px-2.5 py-1 text-xs font-bold">
+                  {currentSong.tonality}
+                </span>
+              )}
+              {settings.isAutoScroll && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  <Play className="h-3 w-3 fill-current" />
+                  {settings.scrollSpeed.toFixed(1)}x
+                </span>
+              )}
+            </div>
+          )}
+        </header>
+      )}
 
-        {(currentSong.tempo || currentSong.tonality) && (
-          <div className="flex items-center justify-center gap-2">
-            {currentSong.tempo && (
-              <span className="bg-secondary text-secondary-foreground rounded-md px-2.5 py-1 text-xs font-bold tabular-nums">
-                {currentSong.tempo}
-                <span className="ml-1 opacity-70">{t("liveMode.bpm")}</span>
-              </span>
-            )}
-            {currentSong.tonality && (
-              <span className="bg-primary text-primary-foreground rounded-md px-2.5 py-1 text-xs font-bold">
-                {currentSong.tonality}
-              </span>
-            )}
-          </div>
-        )}
-      </header>
-
-      {/* Lyrics */}
       <main
         ref={scrollContainerRef}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        className="flex-1 overflow-auto scroll-smooth p-4 md:p-12"
+        className="flex-1 overflow-auto scroll-smooth px-4 pt-4 pb-8 md:px-12"
       >
         <div className="mx-auto max-w-5xl">
           <ChordProRenderer
@@ -409,58 +454,136 @@ export default function LiveModePage() {
         </div>
       </main>
 
-      <div
-        className={`fixed right-3 z-50 max-w-[calc(100vw-1.5rem)] transition-all duration-300 ${
-          showControls ? "translate-x-0" : "translate-x-[calc(100%-40px)]"
-        }`}
-        style={{ bottom: "calc(var(--safe-bottom) + 6rem)" }}
-      >
-        <div className="bg-card/90 flex max-w-full flex-wrap items-center justify-end gap-1.5 rounded-xl border p-1.5 shadow-2xl backdrop-blur-lg">
+      {isChromeVisible && (
+        <footer
+          className="bg-card/95 supports-backdrop-filter:bg-card/85 z-30 shrink-0 border-t backdrop-blur-md"
+          style={{ paddingBottom: "var(--safe-bottom)" }}
+        >
           <button
-            onClick={() => setShowControls((v) => !v)}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-              !showControls ? "text-primary" : ""
-            }`}
-            aria-label={t(
-              "liveMode.settings.toggleControls",
-              "Toggle controls",
-            )}
+            onClick={() => setShowSongList(true)}
+            className="bg-muted relative block h-1.5 w-full overflow-hidden"
+            aria-label={t("setlists.songs.title")}
           >
-            <Settings2 className="h-4 w-4" />
+            <div
+              className="bg-primary absolute inset-y-0 left-0 transition-all"
+              style={{ width: `${progress}%` }}
+            />
           </button>
 
-          {showControls && (
-            <div className="flex flex-wrap items-center justify-end gap-1.5 border-l pl-1.5">
-              <div className="bg-background/50 flex items-center rounded-lg border">
+          <div className="grid grid-cols-4 items-center gap-1.5 p-2">
+            <button
+              onClick={handlePrev}
+              disabled={currentIndex === 0}
+              aria-label={t("liveMode.prev")}
+              className="border-input active:bg-muted flex h-14 items-center justify-center rounded-xl border disabled:opacity-30"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+
+            <button
+              onClick={() => update("isAutoScroll", !settings.isAutoScroll)}
+              aria-label={t("liveMode.settings.autoScrollTitle")}
+              className={cn(
+                "flex h-14 items-center justify-center rounded-xl border",
+                settings.isAutoScroll
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-input active:bg-muted",
+              )}
+            >
+              {settings.isAutoScroll ? (
+                <Pause className="h-5 w-5" />
+              ) : (
+                <Play className="h-5 w-5" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setShowSettings(true)}
+              aria-label={t("settings.title")}
+              className="border-input active:bg-muted flex h-14 items-center justify-center rounded-xl border"
+            >
+              <Settings2 className="h-5 w-5" />
+            </button>
+
+            <button
+              onClick={handleNext}
+              disabled={currentIndex === songs.length - 1}
+              aria-label={t("liveMode.next")}
+              className="bg-primary text-primary-foreground flex h-14 items-center justify-center rounded-xl disabled:opacity-30"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          </div>
+
+          {nextSong && (
+            <p className="text-muted-foreground truncate px-3 pb-2 text-center text-[11px] font-medium tracking-wide">
+              {t("liveMode.nextSong")}:{" "}
+              <span className="text-foreground font-semibold">
+                {nextSong.title}
+              </span>
+            </p>
+          )}
+        </footer>
+      )}
+
+      {showSettings && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/50"
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            className="bg-background w-full space-y-5 rounded-t-2xl p-4"
+            style={{ paddingBottom: "calc(var(--safe-bottom) + 1rem)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-muted mx-auto h-1.5 w-10 rounded-full" />
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{t("settings.title")}</h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                aria-label={t("common.close")}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                {t("liveMode.settings.textSize", "Tamanho do texto")}
+              </p>
+              <div className="flex items-center justify-between gap-3 rounded-xl border p-2">
                 <button
-                  className="flex h-10 w-10 items-center justify-center"
                   onClick={() =>
-                    update("zoomLevel", Math.max(0.5, settings.zoomLevel - 0.2))
+                    update(
+                      "zoomLevel",
+                      Math.max(ZOOM_MIN, settings.zoomLevel - ZOOM_STEP),
+                    )
                   }
-                  aria-label={
-                    t("liveMode.settings.decreaseSize") ?? "Decrease text size"
-                  }
+                  aria-label={t("liveMode.settings.decreaseSize") ?? "Decrease"}
+                  className="active:bg-muted flex h-12 w-12 items-center justify-center rounded-lg"
                 >
-                  <ZoomOut className="h-3.5 w-3.5" />
+                  <ZoomOut className="h-5 w-5" />
                 </button>
-                <span className="w-9 text-center font-mono text-[9px] tabular-nums">
+                <span className="min-w-14 text-center font-mono text-base font-semibold tabular-nums">
                   {Math.round(settings.zoomLevel * 100)}%
                 </span>
                 <button
-                  className="flex h-10 w-10 items-center justify-center"
                   onClick={() =>
-                    update("zoomLevel", Math.min(3, settings.zoomLevel + 0.2))
+                    update(
+                      "zoomLevel",
+                      Math.min(ZOOM_MAX, settings.zoomLevel + ZOOM_STEP),
+                    )
                   }
-                  aria-label={
-                    t("liveMode.settings.increaseSize") ?? "Increase text size"
-                  }
+                  aria-label={t("liveMode.settings.increaseSize") ?? "Increase"}
+                  className="active:bg-muted flex h-12 w-12 items-center justify-center rounded-lg"
                 >
-                  <ZoomIn className="h-3.5 w-3.5" />
+                  <ZoomIn className="h-5 w-5" />
                 </button>
               </div>
+            </div>
 
+            <div className="grid grid-cols-2 gap-2">
               <button
-                className="bg-background/50 flex h-10 items-center gap-1 rounded-lg border px-2"
                 onClick={() => {
                   const order: FontFamily[] = ["sans", "mono", "serif"];
                   const next =
@@ -469,134 +592,162 @@ export default function LiveModePage() {
                     ];
                   update("fontFamily", next);
                 }}
-                title={t("liveMode.settings.fontLabel") ?? "Font"}
+                className="active:bg-muted flex h-14 flex-col items-center justify-center gap-1 rounded-xl border"
               >
-                <Type className="h-3.5 w-3.5" />
-                <span className="text-[9px]">
+                <Type className="h-4 w-4" />
+                <span className="text-xs font-medium">
                   {FONT_LABELS[settings.fontFamily]}
                 </span>
               </button>
 
               <button
                 onClick={() => update("showChords", !settings.showChords)}
-                className={`flex h-10 items-center gap-1 rounded-lg border px-2 text-xs ${
-                  settings.showChords ? "bg-secondary" : ""
-                }`}
-                aria-label={t("liveMode.settings.showChords", "Toggle chords")}
-                title={t("liveMode.settings.showChords", "Toggle chords")}
+                className={cn(
+                  "flex h-14 flex-col items-center justify-center gap-1 rounded-xl border",
+                  settings.showChords
+                    ? "bg-secondary border-secondary"
+                    : "active:bg-muted",
+                )}
               >
-                <Music className="h-3.5 w-3.5" />
+                <Music className="h-4 w-4" />
+                <span className="text-xs font-medium">
+                  {settings.showChords
+                    ? t("liveMode.settings.chordsOn", "Acordes")
+                    : t("liveMode.settings.chordsOff", "Sem acordes")}
+                </span>
               </button>
+            </div>
 
-              <div className="flex items-center gap-1">
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                {t("liveMode.settings.scroll", "Rolagem automática")}
+              </p>
+              <div className="flex items-center justify-between gap-3 rounded-xl border p-2">
                 <button
                   onClick={() => update("isAutoScroll", !settings.isAutoScroll)}
-                  className={`flex h-10 items-center gap-1 rounded-lg border px-2 text-xs ${
+                  aria-label={t("liveMode.settings.autoScrollTitle")}
+                  className={cn(
+                    "flex h-12 w-12 items-center justify-center rounded-lg",
                     settings.isAutoScroll
                       ? "bg-primary text-primary-foreground"
-                      : ""
-                  }`}
-                  aria-label={t(
-                    "liveMode.settings.autoScrollTitle",
-                    "Toggle auto-scroll",
+                      : "active:bg-muted",
                   )}
                 >
                   {settings.isAutoScroll ? (
-                    <Pause className="h-3.5 w-3.5" />
+                    <Pause className="h-5 w-5" />
                   ) : (
-                    <Play className="h-3.5 w-3.5" />
+                    <Play className="h-5 w-5" />
                   )}
                 </button>
-                <div className="bg-background/50 flex items-center rounded-lg border">
-                  <button
-                    className="flex h-10 w-10 items-center justify-center"
-                    onClick={() =>
-                      update(
-                        "scrollSpeed",
-                        Math.max(
-                          SCROLL_MIN,
-                          settings.scrollSpeed - SCROLL_STEP,
-                        ),
-                      )
-                    }
-                    aria-label={t(
-                      "liveMode.settings.decreaseSpeed",
-                      "Decrease speed",
-                    )}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="w-6 text-center font-mono text-[9px] tabular-nums">
-                    {settings.scrollSpeed.toFixed(1)}
-                  </span>
-                  <button
-                    className="flex h-10 w-10 items-center justify-center"
-                    onClick={() =>
-                      update(
-                        "scrollSpeed",
-                        Math.min(
-                          SCROLL_MAX,
-                          settings.scrollSpeed + SCROLL_STEP,
-                        ),
-                      )
-                    }
-                    aria-label={t(
-                      "liveMode.settings.increaseSpeed",
-                      "Increase speed",
-                    )}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+
+                <button
+                  onClick={() =>
+                    update(
+                      "scrollSpeed",
+                      Math.max(SCROLL_MIN, settings.scrollSpeed - SCROLL_STEP),
+                    )
+                  }
+                  aria-label={t("liveMode.settings.decreaseSpeed")}
+                  className="active:bg-muted flex h-12 w-12 items-center justify-center rounded-lg"
+                >
+                  <Minus className="h-5 w-5" />
+                </button>
+                <span className="min-w-10 text-center font-mono text-base font-semibold tabular-nums">
+                  {settings.scrollSpeed.toFixed(1)}x
+                </span>
+                <button
+                  onClick={() =>
+                    update(
+                      "scrollSpeed",
+                      Math.min(SCROLL_MAX, settings.scrollSpeed + SCROLL_STEP),
+                    )
+                  }
+                  aria-label={t("liveMode.settings.increaseSpeed")}
+                  className="active:bg-muted flex h-12 w-12 items-center justify-center rounded-lg"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
-      <footer
-        className="bg-card/80 shrink-0 border-t backdrop-blur-md"
-        style={{ paddingBottom: "var(--safe-bottom)" }}
-      >
-        <div className="bg-muted relative h-1.5 w-full overflow-hidden">
+      {showSongList && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/50"
+          onClick={() => setShowSongList(false)}
+        >
           <div
-            className="bg-primary absolute inset-y-0 left-0 transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="grid grid-cols-3 items-center gap-2 p-3">
-          <div>
-            <button
-              onClick={handlePrev}
-              disabled={currentIndex === 0}
-              className="border-input flex h-12 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-40"
+            className="bg-background flex max-h-[75vh] w-full flex-col rounded-t-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-muted mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full" />
+            <div className="flex shrink-0 items-center justify-between p-4 pb-2">
+              <h2 className="truncate text-lg font-semibold">
+                {setlist.title}
+              </h2>
+              <button
+                onClick={() => setShowSongList(false)}
+                aria-label={t("common.close")}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ul
+              className="overflow-y-auto"
+              style={{ paddingBottom: "calc(var(--safe-bottom) + 0.5rem)" }}
             >
-              <ChevronLeft className="h-5 w-5" />
-              <span className="hidden sm:inline">{t("liveMode.prev")}</span>
-            </button>
-          </div>
-
-          <div className="overflow-hidden px-1 text-center">
-            <p className="text-muted-foreground text-[9px] font-bold tracking-[0.2em] uppercase">
-              {t("liveMode.nextSong")}
-            </p>
-            <p className="truncate text-sm font-bold">
-              {nextSong ? nextSong.title : t("liveMode.endOfShow")}
-            </p>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={handleNext}
-              disabled={currentIndex === songs.length - 1}
-              className="bg-primary text-primary-foreground flex h-12 items-center gap-1 rounded-lg px-4 text-sm font-bold disabled:opacity-40"
-            >
-              <span className="hidden sm:inline">{t("liveMode.next")}</span>
-              <ChevronRight className="h-5 w-5" />
-            </button>
+              {songs.map((song, index) => (
+                <li key={song.id} className="border-b last:border-b-0">
+                  <button
+                    onClick={() => jumpTo(index)}
+                    className={cn(
+                      "active:bg-muted flex w-full items-center gap-3 px-4 py-3 text-left",
+                      index === currentIndex && "bg-primary/10",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                        index === currentIndex
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {index === currentIndex ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        index + 1
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn(
+                          "truncate text-sm font-medium",
+                          index === currentIndex &&
+                            "text-primary font-semibold",
+                        )}
+                      >
+                        {song.title}
+                      </p>
+                      {(song.tonality || song.tempo) && (
+                        <p className="text-muted-foreground truncate text-xs">
+                          {song.tonality ?? ""}
+                          {song.tonality && song.tempo ? " · " : ""}
+                          {song.tempo
+                            ? `${song.tempo} ${t("liveMode.bpm")}`
+                            : ""}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
-      </footer>
+      )}
     </div>
   );
 }
